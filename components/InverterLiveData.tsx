@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Inverter, SolisRealTimeData } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Inverter, ProxyLiveStatus, ProxyDayCurve } from '../types';
 import { useProxyData } from '../services/queries';
-import { SOLIS_POINT_IDS } from '../constants';
 import DailyGenerationChart from './DailyGenerationChart';
 import { apiClient } from '../services/apiClient';
 
@@ -12,20 +11,18 @@ interface Props {
 
 const HISTORICAL_COLORS = ['#34D399', '#63B3ED', '#A78BFA', '#F472B6'];
 
-const getStatusString = (status: number): { text: string, color: string } => {
-  // Based on "Operating status" (29) from documentation
-  if (status === 64) return { text: "On-Grid / Running", color: "text-solar-success" };
-  if (status === 256) return { text: "Operation Fault", color: "text-solar-danger" };
-  if (status === 8) return { text: "Standby", color: "text-blue-400" };
-  if (status === 32768) return { text: "Shutdown", color: "text-gray-500" };
-  if (status === 21760) return { text: "Shutdown due to Fault", color: "text-red-600" };
-  if (status === 33024) return { text: "Derated Running", color: "text-yellow-500" };
-  return { text: `Unknown (${status})`, color: "text-gray-400" };
-}
+const getStatusConfig = (status: string): { text: string; color: string } => {
+  const s = status?.toUpperCase() || 'UNKNOWN';
+  if (s === 'ONLINE') return { text: "Online / Running", color: "text-solar-success" };
+  if (s === 'OFFLINE') return { text: "Offline", color: "text-gray-500" };
+  if (s === 'ERROR') return { text: "System Fault", color: "text-solar-danger" };
+  if (s === 'UNREACHABLE') return { text: "Unreachable", color: "text-red-400" };
+  return { text: s, color: "text-gray-400" };
+};
 
-const LiveDataCard: React.FC<{ label: string, value: string, unit?: string, color?: string }> = ({ label, value, unit, color = "text-white" }) => (
+const LiveDataCard: React.FC<{ label: string; value: string; unit?: string; color?: string }> = ({ label, value, unit, color = "text-white" }) => (
   <div className="bg-solar-card p-4 rounded-lg border border-solar-border text-center">
-    <p className="text-sm text-gray-400 uppercase">{label}</p>
+    <p className="text-sm text-gray-400 uppercase tracking-wider mb-1">{label}</p>
     <p className={`text-2xl font-bold ${color}`}>
       {value} <span className="text-base font-normal text-gray-300">{unit}</span>
     </p>
@@ -33,30 +30,25 @@ const LiveDataCard: React.FC<{ label: string, value: string, unit?: string, colo
 );
 
 const InverterLiveData: React.FC<Props> = ({ inverter, dateOfCommissioning }) => {
-  const sn = inverter.deviceSn || inverter.name;
-  const { data: proxyData, error: proxyError } = useProxyData(sn);
-  const [data, setData] = useState<SolisRealTimeData | null>(null);
+  const invId = inverter.id || 0;
+  const { data: proxyData, error: proxyError, isLoading: isLiveLoading } = useProxyData(invId);
   const [comparisonChartData, setComparisonChartData] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoadingCurves, setIsLoadingCurves] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  useEffect(() => {
-    if (proxyData) {
-      setData(proxyData as any);
-      setLastUpdated(new Date());
-    }
-  }, [proxyData]);
-
-  useEffect(() => {
-    if (proxyError) {
-      setError((proxyError as Error).message);
-    }
-  }, [proxyError]);
-
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [visibleYears, setVisibleYears] = useState<string[]>(['Today']);
   const [chartSeries, setChartSeries] = useState<any[]>([]);
+
+  // Periodically update lastUpdated when new data arrives
+  useEffect(() => {
+    if (proxyData) setLastUpdated(new Date());
+  }, [proxyData]);
+
+  useEffect(() => {
+    if (proxyError) setError((proxyError as Error).message);
+  }, [proxyError]);
 
   useEffect(() => {
     const commissioningYear = new Date(dateOfCommissioning).getFullYear();
@@ -68,51 +60,53 @@ const InverterLiveData: React.FC<Props> = ({ inverter, dateOfCommissioning }) =>
     setAvailableYears(years);
 
     const fetchAllCurves = async () => {
+      if (!invId) return;
       try {
         setIsLoadingCurves(true);
         setError(null);
-        const today = new Date().toISOString().split('T')[0];
+        const todayStr = new Date().toISOString().split('T')[0];
+        
         const promises = [
-          apiClient(`/proxy/inverters/${sn}/day-curve?date=${today}`)
+          apiClient<ProxyDayCurve>(`/proxy/inverters/${invId}/day-curve?date=${todayStr}`)
         ];
 
         years.forEach(year => {
           const histDate = new Date();
           histDate.setFullYear(year);
-          promises.push(apiClient(`/proxy/inverters/${sn}/day-curve?date=${histDate.toISOString().split('T')[0]}`));
+          promises.push(apiClient<ProxyDayCurve>(`/proxy/inverters/${invId}/day-curve?date=${histDate.toISOString().split('T')[0]}`));
         });
 
         const results = await Promise.all(promises);
-        const todayCurve = results[0] as { time: string; power: number }[];
-        const historicalCurves = results.slice(1) as { time: string; power: number }[][];
-
-        const mergedData = todayCurve.map(point => ({
-          time: point.time,
-          'Today': point.power,
+        
+        // Use the first (Today) curve as base for time axis
+        const todayCurve = results[0]?.data_points || [];
+        const mergedData = todayCurve.map(p => ({
+          time: new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
+          'Today': p.value,
         }));
 
-        historicalCurves.forEach((curve, index) => {
+        results.slice(1).forEach((res, index) => {
           const year = years[index];
+          const curve = res?.data_points || [];
           curve.forEach((point, i) => {
             if (mergedData[i]) {
-              mergedData[i][year] = point.power;
+              mergedData[i][year] = point.value;
             }
           });
         });
 
         setComparisonChartData(mergedData);
       } catch (err: any) {
-        setError("Error fetching comparison data: " + err.message);
+        setError("Error fetching comparison curves: " + err.message);
       } finally {
         setIsLoadingCurves(false);
       }
     };
 
     fetchAllCurves();
-  }, [sn, dateOfCommissioning]);
+  }, [invId, dateOfCommissioning]);
 
   useEffect(() => {
-    // Update chart series when visibility changes
     const series = [];
     if (visibleYears.includes('Today')) {
       series.push({ key: 'Today', name: 'Today', color: '#FFD700', type: 'area' });
@@ -125,114 +119,92 @@ const InverterLiveData: React.FC<Props> = ({ inverter, dateOfCommissioning }) =>
     setChartSeries(series);
   }, [visibleYears, availableYears]);
 
-
   const handleYearToggle = (year: string) => {
-    setVisibleYears(prev =>
-      prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]
-    );
+    setVisibleYears(prev => prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]);
   };
 
-  const status = getStatusString(Number(data?.[SOLIS_POINT_IDS.OPERATING_STATUS]?.value || 0));
+  const statusDisplay = useMemo(() => getStatusConfig(proxyData?.status || 'OFFLINE'), [proxyData]);
 
-  if (isLoadingCurves) {
-    return <div className="text-center p-10"><div className="w-8 h-8 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mx-auto"></div><p className="mt-2">Loading live data...</p></div>;
-  }
-
-  if (error) {
-    return <div className="bg-red-900/50 border border-solar-danger text-red-300 p-4 rounded-lg">{error}</div>;
-  }
-
-  if (!data) {
-    return <div className="text-center p-10 text-gray-500">No live data available.</div>
+  if (isLiveLoading || isLoadingCurves) {
+    return (
+      <div className="text-center p-20 bg-solar-card rounded-xl border border-solar-border">
+        <div className="w-12 h-12 border-4 border-solar-accent border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p className="text-gray-400 font-medium">Communicating with Inverter Proxy...</p>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h3 className="text-lg font-semibold">Real-Time Status</h3>
-        <p className="text-xs text-gray-500">Last updated: {lastUpdated?.toLocaleTimeString() || 'N/A'}</p>
+    <div className="space-y-6 animate-fadeIn">
+      <div className="flex justify-between items-end">
+        <div>
+          <h3 className="text-xl font-bold text-white mb-1">Real-Time Performance</h3>
+          <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-solar-success animate-pulse"></span>
+            Normalized Feed • {proxyData?.vendor || 'Multi-Vendor'} Inverter
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-gray-500">Last Telemetry</p>
+          <p className="text-sm font-mono text-gray-300">{lastUpdated?.toLocaleTimeString() || 'Waiting...'}</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <LiveDataCard label="Operating Status" value={status.text} color={status.color} />
-        <LiveDataCard label="AC Power" value={(Number(data[SOLIS_POINT_IDS.TOTAL_ACTIVE_POWER].value) / 1000).toFixed(2)} unit="kW" color="text-solar-accent" />
-        <LiveDataCard label="DC Power" value={(Number(data[SOLIS_POINT_IDS.TOTAL_DC_POWER].value) / 1000).toFixed(2)} unit="kW" color="text-blue-400" />
-        <LiveDataCard label="Daily Yield" value={(Number(data[SOLIS_POINT_IDS.YIELD_TODAY].value) / 1000).toFixed(1)} unit="kWh" color="text-solar-success" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <LiveDataCard label="System Status" value={statusDisplay.text} color={statusDisplay.color} />
+        <LiveDataCard label="Current Power" value={(proxyData?.power_output_kw || 0).toFixed(2)} unit="kW" color="text-solar-accent" />
+        <LiveDataCard label="Daily Yield" value={(proxyData?.daily_yield_kwh || 0).toFixed(1)} unit="kWh" color="text-solar-success" />
+        <LiveDataCard label="Vendor" value={proxyData?.vendor || '-'} color="text-blue-400" />
       </div>
 
-      <div className="bg-solar-card rounded-lg border border-solar-border p-4">
-        <h4 className="font-semibold mb-4 text-white">Daily Generation Curve</h4>
-        {comparisonChartData.length > 0 ? (
-          <>
-            <DailyGenerationChart data={comparisonChartData} series={chartSeries} />
-            <div className="flex items-center justify-center gap-2 mt-4">
-              <span className="text-xs text-gray-400 mr-2">Compare with:</span>
-              <button
-                onClick={() => handleYearToggle('Today')}
-                className={`px-3 py-1 text-xs rounded font-medium transition ${visibleYears.includes('Today') ? 'bg-solar-accent text-black' : 'bg-solar-bg text-gray-300 hover:bg-gray-700'}`}
-              >
-                Today
-              </button>
-              {availableYears.map(year => (
+      <div className="bg-solar-card rounded-xl border border-solar-border overflow-hidden shadow-lg">
+        <div className="p-5 border-b border-solar-border flex justify-between items-center bg-white/5">
+          <h4 className="font-bold text-white flex items-center gap-2">
+            <svg className="w-4 h-4 text-solar-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            Power Generation Trend (Today)
+          </h4>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setVisibleYears(['Today'])} className="text-[10px] uppercase font-bold text-solar-accent hover:underline">Reset</button>
+          </div>
+        </div>
+        <div className="p-6">
+          {comparisonChartData.length > 0 ? (
+            <>
+              <DailyGenerationChart data={comparisonChartData} series={chartSeries} />
+              <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
+                <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest w-full text-center mb-1">Historical Comparison</span>
                 <button
-                  key={year}
-                  onClick={() => handleYearToggle(String(year))}
-                  className={`px-3 py-1 text-xs rounded font-medium transition ${visibleYears.includes(String(year)) ? 'bg-solar-success text-black' : 'bg-solar-bg text-gray-300 hover:bg-gray-700'}`}
+                  onClick={() => handleYearToggle('Today')}
+                  className={`px-4 py-1.5 text-xs rounded-full font-bold transition-all border ${visibleYears.includes('Today') ? 'bg-solar-accent text-black border-solar-accent' : 'bg-transparent text-gray-400 border-solar-border hover:border-gray-500'}`}
                 >
-                  {year}
+                  Today
                 </button>
-              ))}
+                {availableYears.map(year => (
+                  <button
+                    key={year}
+                    onClick={() => handleYearToggle(String(year))}
+                    className={`px-4 py-1.5 text-xs rounded-full font-bold transition-all border ${visibleYears.includes(String(year)) ? 'bg-solar-success text-black border-solar-success' : 'bg-transparent text-gray-400 border-solar-border hover:border-gray-500'}`}
+                  >
+                    {year}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-20 flex flex-col items-center gap-3 grayscale opacity-50">
+               <svg className="w-12 h-12 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+               <p className="text-gray-500 font-medium">No power data has been recorded for the current inverter yet.</p>
             </div>
-          </>
-        ) : (
-          <div className="text-center h-64 flex items-center justify-center text-gray-500">No generation data for today yet.</div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-solar-card rounded-lg border border-solar-border p-4">
-          <h4 className="font-semibold mb-2">Grid Vitals</h4>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-400">Frequency</span><span>{Number(data[SOLIS_POINT_IDS.GRID_FREQUENCY].value).toFixed(2)} Hz</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Phase A Voltage</span><span>{Number(data[SOLIS_POINT_IDS.PHASE_A_VOLTAGE].value).toFixed(1)} V</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Phase B Voltage</span><span>{Number(data[SOLIS_POINT_IDS.PHASE_B_VOLTAGE].value).toFixed(1)} V</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Phase C Voltage</span><span>{Number(data[SOLIS_POINT_IDS.PHASE_C_VOLTAGE].value).toFixed(1)} V</span></div>
-          </div>
-        </div>
-        <div className="bg-solar-card rounded-lg border border-solar-border p-4">
-          <h4 className="font-semibold mb-2">General Info</h4>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-400">Internal Temp.</span><span>{Number(data[SOLIS_POINT_IDS.INTERNAL_AIR_TEMP].value).toFixed(1)} °C</span></div>
-            <div className="flex justify-between"><span className="text-gray-400">Total Yield</span><span>{(Number(data[SOLIS_POINT_IDS.YIELD_TOTAL].value) / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })} kWh</span></div>
-          </div>
+          )}
         </div>
       </div>
-
-      <div className="bg-solar-card rounded-lg border border-solar-border">
-        <h3 className="p-4 font-bold text-white border-b border-solar-border">MPPT Performance</h3>
-        <table className="w-full text-left text-sm">
-          <thead className="text-xs text-gray-400 uppercase"><tr>
-            <th className="px-4 py-2">MPPT</th>
-            <th className="px-4 py-2 text-right">Voltage (V)</th>
-            <th className="px-4 py-2 text-right">Current (A)</th>
-            <th className="px-4 py-2 text-right">Power (kW)</th>
-          </tr></thead>
-          <tbody className="divide-y divide-solar-border">
-            {[...Array(2)].map((_, i) => { // Assuming up to 2 MPPTs for this example
-              const mppt = i + 1;
-              const voltage = Number(data[SOLIS_POINT_IDS[`MPPT${mppt}_VOLTAGE` as keyof typeof SOLIS_POINT_IDS]]?.value || 0);
-              const current = Number(data[SOLIS_POINT_IDS[`MPPT${mppt}_CURRENT` as keyof typeof SOLIS_POINT_IDS]]?.value || 0);
-              const power = (voltage * current) / 1000;
-              return (
-                <tr key={mppt}><td className="p-3 font-medium text-gray-300">MPPT {mppt}</td>
-                  <td className="p-3 text-right text-blue-300">{voltage.toFixed(1)}</td>
-                  <td className="p-3 text-right text-green-300">{current.toFixed(2)}</td>
-                  <td className="p-3 text-right text-yellow-300">{power.toFixed(2)}</td></tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      
+      {error && (
+        <div className="bg-solar-danger/10 border border-solar-danger p-4 rounded-lg flex items-center gap-3">
+          <svg className="w-5 h-5 text-solar-danger" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <p className="text-sm text-red-200">{error}</p>
+        </div>
+      )}
     </div>
   );
 };

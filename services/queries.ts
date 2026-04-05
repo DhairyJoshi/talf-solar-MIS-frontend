@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from './apiClient';
-import { Project, Inverter, MonthlyKPI } from '../types';
+import { Project, Inverter, MonthlyKPI, ProxyLiveStatus, ProxyDayCurve } from '../types';
 import { useAuthStore } from '../store/useAuthStore';
 
 interface BackendProject {
@@ -165,26 +165,26 @@ export const useInverter = (id: number) => {
   });
 };
 
-export const useProxyData = (inverterSn: string) => {
+export const useProxyData = (inverterId: number) => {
   return useQuery({
-    queryKey: ['proxy', inverterSn],
+    queryKey: ['proxy', inverterId],
     queryFn: async () => {
-      if (!inverterSn) throw new Error("No Inverter SN");
-      return await apiClient(`/proxy/inverters/${inverterSn}/live-status`);
+      if (!inverterId) throw new Error("No Inverter ID");
+      return await apiClient<ProxyLiveStatus>(`/proxy/inverters/${inverterId}/live-status`);
     },
-    enabled: !!inverterSn,
+    enabled: !!inverterId,
     refetchInterval: 60000, 
   });
 };
 
-export const useDayCurve = (inverterSn: string, date: string) => {
+export const useDayCurve = (inverterId: number, date: string) => {
   return useQuery({
-    queryKey: ['proxy', inverterSn, 'day-curve', date],
+    queryKey: ['proxy', inverterId, 'day-curve', date],
     queryFn: async () => {
-      if (!inverterSn) throw new Error("No Inverter SN");
-      return await apiClient(`/proxy/inverters/${inverterSn}/day-curve?date=${date}`);
+      if (!inverterId) throw new Error("No Inverter ID");
+      return await apiClient<ProxyDayCurve>(`/proxy/inverters/${inverterId}/day-curve?date=${date}`);
     },
-    enabled: !!inverterSn && !!date,
+    enabled: !!inverterId && !!date,
   });
 };
 

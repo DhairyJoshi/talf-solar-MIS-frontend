@@ -128,12 +128,19 @@ export interface MonthlyKPI {
   computed_at: string;
 }
 
-export type SolisRealTimeData = {
-  [pointId: string]: {
-    value: number | string;
-    unit: string;
-    name: string;
-  }
+export interface ProxyLiveStatus {
+  vendor: string;
+  device_id: string;
+  power_output_kw: number;
+  daily_yield_kwh: number;
+  status: 'ONLINE' | 'OFFLINE' | 'ERROR' | 'UNREACHABLE';
+}
+
+export interface ProxyDayCurve {
+  vendor: string;
+  device_id: string;
+  date: string;
+  data_points: { timestamp: string, value: number }[];
 }
 
 export type TimeRange = '6M' | '12M' | 'ALL';
