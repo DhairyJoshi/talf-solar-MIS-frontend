@@ -1,7 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
-import { getCredentials, saveCredentials } from '../services/solisAPIService';
-import { useAuth } from '../context/AuthContext';
+import React, { useState } from 'react';
 
 interface Props {
   isOpen: boolean;
@@ -10,24 +8,11 @@ interface Props {
 }
 
 const SolisSettingsModal: React.FC<Props> = ({ isOpen, onClose, onOpenModuleBuildsModal }) => {
-  const { currentUser } = useAuth();
-  const [apiKey, setApiKey] = useState('');
-  const [apiSecret, setApiSecret] = useState('');
-  const [apiBaseUrl, setApiBaseUrl] = useState('');
-  
-  useEffect(() => {
-    if (isOpen) {
-      const creds = getCredentials();
-      if (creds) {
-        setApiKey(creds.apiKey);
-        setApiSecret(creds.apiSecret);
-        setApiBaseUrl(creds.apiBaseUrl || '');
-      }
-    }
-  }, [isOpen]);
+  const [apiKey, setApiKey] = useState('PLATFORM_KEY');
+  const [apiSecret, setApiSecret] = useState('****************');
+  const [apiBaseUrl, setApiBaseUrl] = useState('https://api.soliscloud.com');
 
   const handleSave = () => {
-    saveCredentials(apiKey, apiSecret, apiBaseUrl);
     onClose();
   };
 
@@ -45,8 +30,8 @@ const SolisSettingsModal: React.FC<Props> = ({ isOpen, onClose, onOpenModuleBuil
           <div>
             <h3 className="text-lg font-semibold text-white mb-2">SolisCloud API</h3>
             <label className="block text-sm text-gray-400 mb-1">API Base URL</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="e.g., https://api.soliscloud.com"
               className="w-full bg-solar-card border border-solar-border rounded p-2 text-white focus:border-solar-accent outline-none"
               value={apiBaseUrl}
@@ -55,8 +40,8 @@ const SolisSettingsModal: React.FC<Props> = ({ isOpen, onClose, onOpenModuleBuil
           </div>
           <div>
             <label className="block text-sm text-gray-400 mb-1">API Key</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Enter your SolisCloud API Key"
               className="w-full bg-solar-card border border-solar-border rounded p-2 text-white focus:border-solar-accent outline-none"
               value={apiKey}
@@ -65,9 +50,9 @@ const SolisSettingsModal: React.FC<Props> = ({ isOpen, onClose, onOpenModuleBuil
           </div>
           <div>
             <label className="block text-sm text-gray-400 mb-1">API Secret</label>
-            <input 
+            <input
               type="password"
-              placeholder="Enter your SolisCloud API Secret" 
+              placeholder="Enter your SolisCloud API Secret"
               className="w-full bg-solar-card border border-solar-border rounded p-2 text-white focus:border-solar-accent outline-none"
               value={apiSecret}
               onChange={(e) => setApiSecret(e.target.value)}
@@ -78,8 +63,8 @@ const SolisSettingsModal: React.FC<Props> = ({ isOpen, onClose, onOpenModuleBuil
           </p>
 
           <div className="pt-4 mt-4 border-t border-solar-border">
-             <h3 className="text-lg font-semibold text-white mb-2">Technical Data</h3>
-             <button onClick={onOpenModuleBuildsModal} className="w-full px-4 py-2 rounded text-white bg-solar-border hover:bg-gray-600 transition">
+            <h3 className="text-lg font-semibold text-white mb-2">Technical Data</h3>
+            <button onClick={onOpenModuleBuildsModal} className="w-full px-4 py-2 rounded text-white bg-solar-border hover:bg-gray-600 transition">
               Manage Module Builds
             </button>
           </div>

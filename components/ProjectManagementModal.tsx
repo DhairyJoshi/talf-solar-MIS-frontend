@@ -1,8 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { Project, Inverter, ModuleBuild } from '../types';
-import { calculateProjectStaticCapacity } from '../services/dataService';
-import { getModuleBuilds } from '../services/moduleBuildService';
+import { useModuleBuilds } from '../services/queries';
 
 interface Props {
   isOpen: boolean;
@@ -12,6 +10,7 @@ interface Props {
 }
 
 const ProjectManagementModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialProject }) => {
+  const { data: moduleBuilds = [] } = useModuleBuilds();
   const [project, setProject] = useState<Project>({
     projectCode: '',
     projectName: '',
@@ -22,13 +21,11 @@ const ProjectManagementModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
     inverters: [],
     monthlyData: {}
   });
-  const [moduleBuilds, setModuleBuilds] = useState<ModuleBuild[]>([]);
 
   useEffect(() => {
     if (isOpen) {
-      setModuleBuilds(getModuleBuilds());
       if (initialProject) {
-        setProject(JSON.parse(JSON.stringify(initialProject))); // Deep copy
+        setProject(JSON.parse(JSON.stringify(initialProject)));
       } else {
         setProject({
           projectCode: '',
@@ -63,7 +60,7 @@ const ProjectManagementModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
     setProject(prev => ({ ...prev, inverters: newInverters }));
   };
 
-  const { totalKWac } = calculateProjectStaticCapacity(project);
+  const totalKWac = project.inverters.reduce((sum, inv) => sum + (inv.kwac || 0), 0);
 
   if (!isOpen) return null;
 

@@ -1,25 +1,5 @@
-
 import { Project, KPIResult, MonthlyData, TimeRange, ModuleBuild, Inverter, InverterKPIResult, BreakdownEvent, BreakdownReason, BreakdownStats } from '../types';
 import { CO2_FACTOR, SYSTEM_EFFICIENCY } from '../constants';
-import { getModuleBuilds } from './moduleBuildService';
-
-const STORAGE_KEY = 'helios_mis_data_v4'; // Data version key
-
-// --- Normalization ---
-const normalizeProject = (p: any): Project => ({
-  projectCode: p.projectCode || 'N/A',
-  projectState: p.projectState || 'N/A',
-  projectName: p.projectName || 'Unnamed Project',
-  projectOwner: p.projectOwner || 'N/A',
-  dateOfCommissioning: p.dateOfCommissioning || new Date().toISOString(),
-  tariff: p.tariff || 0,
-  inverters: p.inverters || [],
-  monthlyData: p.monthlyData || {},
-  breakdownEvents: p.breakdownEvents || [],
-});
-
-
-// --- Calculations ---
 
 export const calculateProjectStaticCapacity = (project: Project) => {
   const totalKWac = (project.inverters || []).reduce((sum, inv) => sum + inv.kwac, 0);
@@ -28,25 +8,15 @@ export const calculateProjectStaticCapacity = (project: Project) => {
 
 export const filterMonthlyData = (monthlyData: Record<string, MonthlyData>, range: TimeRange): MonthlyData[] => {
   const sorted = Object.values(monthlyData).sort((a, b) => a.month.localeCompare(b.month));
-  
   if (range === 'ALL') return sorted;
   if (sorted.length === 0) return [];
-
-  if (range === '6M') {
-    return sorted.slice(-6);
-  }
-  
-  if (range === '12M') {
-    return sorted.slice(-12);
-  }
-  
+  if (range === '6M') return sorted.slice(-6);
+  if (range === '12M') return sorted.slice(-12);
   return sorted;
 };
 
-export const calculateKPIs = (project: Project, timeRange: TimeRange = 'ALL', moduleBuilds?: ModuleBuild[]): KPIResult => {
-  const allModuleBuilds = moduleBuilds || getModuleBuilds();
-  const moduleBuildMap = new Map(allModuleBuilds.map(b => [b.id, b]));
-
+export const calculateKPIs = (project: Project, timeRange: TimeRange = 'ALL', moduleBuilds: ModuleBuild[] = []): KPIResult => {
+  const moduleBuildMap = new Map(moduleBuilds.map(b => [b.id, b]));
   const { totalKWac } = calculateProjectStaticCapacity(project);
   
   let totalExport = 0;
@@ -54,7 +24,6 @@ export const calculateKPIs = (project: Project, timeRange: TimeRange = 'ALL', mo
   let totalTargetP50 = 0;
   let totalTargetOM = 0;
   let totalDays = 0;
-  
   let prDenominator = 0;
   let dcCufDenominator = 0;
   let acCufDenominator = 0;
@@ -107,7 +76,6 @@ export const calculateKPIs = (project: Project, timeRange: TimeRange = 'ALL', mo
     }, 0);
 
     prDenominator += monthlyPrDenominator;
-    
     dcCufDenominator += monthlyTotalDcKW * hours;
     acCufDenominator += totalKWac * hours;
   });
@@ -130,7 +98,6 @@ export const calculateKPIs = (project: Project, timeRange: TimeRange = 'ALL', mo
   const cuf = acCufDenominator > 0 ? (netEnergy / acCufDenominator) * 100 : 0;
   const dcCuf = dcCufDenominator > 0 ? (netEnergy / dcCufDenominator) * 100 : 0;
 
-
   return {
     totalCapacityKWac: totalKWac,
     totalCapacityKWdc: latestTotalKWdc,
@@ -152,16 +119,12 @@ export const calculateKPIs = (project: Project, timeRange: TimeRange = 'ALL', mo
   };
 };
 
-
-export const calculateInverterKPIs = (project: Project, inverter: Inverter, inverterIndex: number, timeRange: TimeRange = 'ALL', moduleBuilds?: ModuleBuild[]): InverterKPIResult => {
-  const allModuleBuilds = moduleBuilds || getModuleBuilds();
-  const moduleBuildMap = new Map(allModuleBuilds.map(b => [b.id, b]));
-
+export const calculateInverterKPIs = (project: Project, inverter: Inverter, inverterIndex: number, timeRange: TimeRange = 'ALL', moduleBuilds: ModuleBuild[] = []): InverterKPIResult => {
+  const moduleBuildMap = new Map(moduleBuilds.map(b => [b.id, b]));
   let totalExport = 0;
   let totalTargetOM = 0;
   let totalTheoreticalEnergy = 0;
   let totalDays = 0;
-  
   let prDenominator = 0;
   let dcCufDenominator = 0;
   let acCufDenominator = 0;
@@ -212,11 +175,6 @@ export const calculateInverterKPIs = (project: Project, inverter: Inverter, inve
     acCufDenominator += inverter.kwac * hours;
   });
 
-  const tariff = project.tariff || 0;
-  const revenue = totalExport * tariff;
-  const targetRevenue = totalTargetOM * tariff;
-  const co2Reduction = (totalExport / 1000) * CO2_FACTOR;
-  
   let latestTotalKWdc = 0;
   if (months.length > 0) {
     const lastMonth = months[months.length - 1];
@@ -232,15 +190,15 @@ export const calculateInverterKPIs = (project: Project, inverter: Inverter, inve
   return {
     totalCapacityKWac: inverter.kwac,
     totalCapacityKWdc: latestTotalKWdc,
-    tariff: tariff,
+    tariff: project.tariff || 0,
     totalExport,
-    revenue,
-    targetRevenue,
+    revenue: totalExport * (project.tariff || 0),
+    targetRevenue: totalTargetOM * (project.tariff || 0),
     yield: yieldVal,
     pr,
     cuf,
     dcCuf,
-    co2Reduction,
+    co2Reduction: (totalExport / 1000) * CO2_FACTOR,
     targetOM: totalTargetOM,
     totalTheoreticalEnergy,
     totalDays,
@@ -248,229 +206,27 @@ export const calculateInverterKPIs = (project: Project, inverter: Inverter, inve
   };
 };
 
-export const calculateBreakdownStats = (
-  events: BreakdownEvent[],
-  inverterDcCapacity: number,
-  periodDays: number,
-): BreakdownStats => {
-  const stats: BreakdownStats = {
-    totalBreakdownDurationMinutes: 0,
-    totalGenerationLossKwh: 0,
-    totalGiiLoss: 0,
-    availabilityPercent: 100,
-    byReason: {},
-  };
-
+export const calculateBreakdownStats = (events: BreakdownEvent[], inverterDcCapacity: number, periodDays: number): BreakdownStats => {
+  const stats: BreakdownStats = { totalBreakdownDurationMinutes: 0, totalGenerationLossKwh: 0, totalGiiLoss: 0, availabilityPercent: 100, byReason: {} };
   events.forEach(event => {
     const [startH, startM] = event.startTime.split(':').map(Number);
     const [endH, endM] = event.endTime.split(':').map(Number);
     const durationMinutes = (endH * 60 + endM) - (startH * 60 + startM);
-    
-    if(durationMinutes < 0) return; // Ignore invalid events
-
+    if(durationMinutes < 0) return;
     const giiLoss = event.giiAtEnd - event.giiAtStart;
     const generationLossKwh = giiLoss * inverterDcCapacity * SYSTEM_EFFICIENCY;
-
     stats.totalBreakdownDurationMinutes += durationMinutes;
     stats.totalGiiLoss += giiLoss;
     stats.totalGenerationLossKwh += generationLossKwh;
-
-    if (!stats.byReason[event.reason]) {
-      stats.byReason[event.reason] = {
-        durationMinutes: 0,
-        giiLoss: 0,
-        generationLossKwh: 0,
-        count: 0,
-      };
-    }
+    if (!stats.byReason[event.reason]) stats.byReason[event.reason] = { durationMinutes: 0, giiLoss: 0, generationLossKwh: 0, count: 0 };
     const reasonStats = stats.byReason[event.reason]!;
     reasonStats.durationMinutes += durationMinutes;
     reasonStats.giiLoss += giiLoss;
     reasonStats.generationLossKwh += generationLossKwh;
     reasonStats.count += 1;
   });
-  
   const totalPeriodMinutes = periodDays * 24 * 60;
-  if (totalPeriodMinutes > 0) {
-      stats.availabilityPercent = ((totalPeriodMinutes - stats.totalBreakdownDurationMinutes) / totalPeriodMinutes) * 100;
-  }
-
+  if (totalPeriodMinutes > 0) stats.availabilityPercent = ((totalPeriodMinutes - stats.totalBreakdownDurationMinutes) / totalPeriodMinutes) * 100;
   return stats;
-}
-
-
-// --- Storage Service (Local Storage Only) ---
-
-export const loadProjects = async (): Promise<Project[]> => {
-  const localData = getProjectsFromLocalStorage();
-  if (localData.length > 0) {
-    console.log("Loaded data from local storage.");
-    return localData;
-  }
-
-  console.log("No local data found. Generating fresh mock data.");
-  const dummyData = createDummyProjects();
-  await saveProjects(dummyData);
-  return dummyData;
 };
 
-const getProjectsFromLocalStorage = (): Project[] => {
-   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const data = JSON.parse(stored);
-      if (Array.isArray(data) && data.length > 0) {
-        return data.map(normalizeProject);
-      }
-    }
-  } catch (e) {
-    console.error("Failed to load from local storage", e);
-  }
-  return [];
-}
-
-export const saveProjects = async (projects: Project[]) => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-    console.log('Projects saved to local storage.');
-  } catch (e) {
-    console.error("Failed to save to local storage", e);
-  }
-};
-
-
-// ====================================================================================
-// ========================== DUMMY DATA GENERATION ===================================
-// ====================================================================================
-const createDummyProjects = (): Project[] => {
-  console.log("Generating enhanced dummy project data for first-time setup...");
-  const moduleBuilds = getModuleBuilds();
-  const defaultBuildId = moduleBuilds.length > 0 ? moduleBuilds[0].id : undefined;
-
-  const generateMonthlyData = (
-    doc: Date,
-    inverters: { name: string, kwac: number, moduleCount?: number }[],
-    projectCode: string
-  ): Record<string, MonthlyData> => {
-    const data: Record<string, MonthlyData> = {};
-    const today = new Date();
-    const currentMonth = new Date(doc.getFullYear(), doc.getMonth(), 1);
-
-    const anomalyDate = new Date();
-    anomalyDate.setMonth(anomalyDate.getMonth() - 2);
-    const anomalyMonthKey = `${anomalyDate.getFullYear()}-${String(anomalyDate.getMonth() + 1).padStart(2, '0')}`;
-
-    while (currentMonth <= today) {
-      const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
-      const monthNum = currentMonth.getMonth() + 1;
-      const seasonalFactor = 1 - (Math.abs(6.5 - monthNum) / 5.5) * 0.4;
-
-      const monthData: MonthlyData = {
-        month: monthKey,
-        electricityImportedKWh: 0,
-        targetNetKWhP50: 0,
-        inverterExportKWh: [],
-        inverterTargetOMKWh: [],
-        inverterIrradiation: [],
-        inverterDcCapacityKW: [],
-      };
-
-      let projectImport = 0;
-      let projectTargetP50 = 0;
-
-      inverters.forEach(inv => {
-        const randomFactor = 0.9 + Math.random() * 0.2;
-        const dailyGen = inv.kwac * 4.2 * seasonalFactor * randomFactor;
-        let monthlyGen = Math.round(dailyGen * 30);
-        
-        if (projectCode === 'TALF-GGN-01' && inv.name === 'GGN-INV-02' && monthKey === anomalyMonthKey) {
-          monthlyGen = 0;
-        }
-
-        const monthlyTargetOM = Math.round(dailyGen * 30 * 0.95);
-        const monthlyTargetP50 = Math.round(monthlyTargetOM * 1.05);
-        
-        const dcCapacity = (inv.moduleCount || 0) * 0.540;
-
-        monthData.inverterExportKWh.push(monthlyGen);
-        monthData.inverterTargetOMKWh.push(monthlyTargetOM);
-        monthData.inverterIrradiation.push(Math.round((130 + Math.random() * 40) * seasonalFactor * (dcCapacity / (inv.kwac * 1.2))));
-        monthData.inverterDcCapacityKW.push(dcCapacity);
-        
-        projectImport += Math.round(monthlyGen * 0.02 * Math.random());
-        projectTargetP50 += monthlyTargetP50;
-      });
-      
-      monthData.electricityImportedKWh = projectImport;
-      monthData.targetNetKWhP50 = projectTargetP50;
-      data[monthKey] = monthData;
-      currentMonth.setMonth(currentMonth.getMonth() + 1);
-    }
-    return data;
-  };
-
-  const today = new Date();
-  const yesterday = new Date();
-  yesterday.setDate(today.getDate() - 1);
-  const fiveDaysAgo = new Date();
-  fiveDaysAgo.setDate(today.getDate() - 5);
-
-  const formatDate = (d: Date) => d.toISOString().split('T')[0];
-  
-  const projects: Project[] = [
-    {
-      projectCode: 'TALF-GGN-01',
-      projectName: 'Gurgaon Commercial Rooftop',
-      projectState: 'Haryana',
-      projectOwner: 'Talf Solar',
-      dateOfCommissioning: '2022-04-15T00:00:00.000Z',
-      tariff: 4.75,
-      inverters: [
-        { name: 'GGN-INV-01', kwac: 50, moduleCount: 120, moduleBuildId: defaultBuildId, solisSn: '1234567890123', psKey: 'pskey-ggn-01' },
-        { name: 'GGN-INV-02', kwac: 50, moduleCount: 120, moduleBuildId: defaultBuildId, psKey: 'pskey-ggn-02' },
-        { name: 'GGN-INV-03', kwac: 25, moduleCount: 60, moduleBuildId: defaultBuildId, psKey: 'pskey-ggn-03' },
-      ],
-      monthlyData: {},
-      breakdownEvents: [
-        { id: 'bd-1', inverterName: 'GGN-INV-02', date: formatDate(fiveDaysAgo), startTime: '11:30', endTime: '13:00', reason: BreakdownReason.GRID_FAILURE, giiAtStart: 2.1, giiAtEnd: 2.8, notes: 'Feeder E-11 tripped.'},
-        { id: 'bd-2', inverterName: 'GGN-INV-02', date: formatDate(yesterday), startTime: '14:00', endTime: '14:20', reason: BreakdownReason.PLANT_BREAKDOWN, giiAtStart: 3.5, giiAtEnd: 3.7, notes: 'ACDB fuse blown, replaced.'},
-        { id: 'bd-3', inverterName: 'GGN-INV-01', date: formatDate(yesterday), startTime: '09:15', endTime: '10:45', reason: BreakdownReason.GRID_OVER_VOLTAGE, giiAtStart: 1.1, giiAtEnd: 1.9},
-      ]
-    },
-    {
-      projectCode: 'TALF-RJ-01',
-      projectName: 'Bhadla Solar Park (Phase IV)',
-      projectState: 'Rajasthan',
-      projectOwner: 'Talf Solar',
-      dateOfCommissioning: '2023-11-01T00:00:00.000Z',
-      tariff: 2.15,
-      inverters: [
-        { name: 'BHD-INV-01', kwac: 100, moduleCount: 240, moduleBuildId: defaultBuildId, psKey: 'pskey-bhd-01' },
-        { name: 'BHD-INV-02', kwac: 100, moduleCount: 240, moduleBuildId: defaultBuildId, psKey: 'pskey-bhd-02' },
-        { name: 'BHD-INV-03', kwac: 100, moduleCount: 240, moduleBuildId: defaultBuildId, psKey: 'pskey-bhd-03' },
-        { name: 'BHD-INV-04', kwac: 100, moduleCount: 240, moduleBuildId: defaultBuildId, psKey: 'pskey-bhd-04' },
-      ],
-      monthlyData: {},
-      breakdownEvents: [],
-    },
-    {
-      projectCode: 'TALF-DL-RES-01',
-      projectName: 'Delhi Residential Rooftop',
-      projectState: 'Delhi',
-      projectOwner: 'Private Owner',
-      dateOfCommissioning: '2023-01-20T00:00:00.000Z',
-      tariff: 5.50,
-      inverters: [
-        { name: 'DL-INV-01', kwac: 10, moduleCount: 22, moduleBuildId: defaultBuildId, psKey: 'pskey-dl-01' },
-      ],
-      monthlyData: {},
-      breakdownEvents: [],
-    },
-  ];
-
-  projects.forEach(p => {
-    p.monthlyData = generateMonthlyData(new Date(p.dateOfCommissioning), p.inverters, p.projectCode);
-  });
-
-  return projects;
-};

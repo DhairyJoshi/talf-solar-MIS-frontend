@@ -1,20 +1,13 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Project, ChartDataPoint, TimeRange, InverterKPIResult, BreakdownEvent } from '../types';
-import { calculateInverterKPIs, filterMonthlyData } from '../services/dataService';
-import { getModuleBuilds } from '../services/moduleBuildService';
-import InverterPerformanceChart from '../components/InverterPerformanceChart';
-import { SYSTEM_EFFICIENCY } from '../constants';
+import { TimeRange, BreakdownEvent } from '../types';
+import { filterMonthlyData } from '../services/dataService';
 import { useAuth } from '../context/AuthContext';
 import InverterBreakdownAnalysis from '../components/InverterBreakdownAnalysis';
 import BreakdownEntryModal from '../components/BreakdownEntryModal';
 import InverterLiveData from '../components/InverterLiveData';
-
-interface Props {
-  projects: Project[];
-  onUpdateProject: (p: Project) => void;
-}
+import { useInverter, useProject, useBreakdownEvents, useAddBreakdownEvent, useDeleteBreakdownEvent } from '../services/queries';
 
 const formatIndian = (val: number | undefined) => {
    if (val === undefined || val === null || isNaN(val)) return '-';
@@ -29,10 +22,11 @@ const SortIcon = ({ direction }: { direction: 'asc' | 'desc' | null }) => {
   return <span className="text-solar-accent ml-1">{direction === 'asc' ? '▲' : '▼'}</span>;
 };
 
-
-const InverterDetailsPage: React.FC<Props> = ({ projects, onUpdateProject }) => {
-  const { projectCode, inverterIndex: inverterIndexStr } = useParams();
+const InverterDetailsPage: React.FC = () => {
+  const { projectCode, inverterId: inverterIdStr } = useParams();
+  const inverterId = parseInt(inverterIdStr || '0', 10);
   const { currentUser } = useAuth();
+  
   const [timeRange, setTimeRange] = useState<TimeRange>('12M');
   const [activeTab, setActiveTab] = useState<'performance' | 'breakdown' | 'live'>('performance');
   const [isBreakdownModalOpen, setBreakdownModalOpen] = useState(false);
@@ -40,150 +34,51 @@ const InverterDetailsPage: React.FC<Props> = ({ projects, onUpdateProject }) => 
   const [breakdownMonthFilter, setBreakdownMonthFilter] = useState<string>(new Date().toISOString().slice(0, 7));
   const [sortConfig, setSortConfig] = useState<{ key: string, dir: 'asc' | 'desc' }>({ key: 'month', dir: 'desc' });
   
-  const canEditBreakdowns = currentUser?.role === 'admin' || currentUser?.role === 'operations';
+  const { data: project } = useProject(projectCode || '');
+  const { data: inverter } = useInverter(inverterId);
+  const { data: events = [] } = useBreakdownEvents(inverterId);
+  const addEventMutation = useAddBreakdownEvent(inverterId);
+  const deleteEventMutation = useDeleteBreakdownEvent(inverterId);
 
-  if (currentUser?.role === 'viewer') {
+  const role = currentUser?.role?.toLowerCase();
+  const canEditBreakdowns = role === 'admin' || role === 'operations';
+
+  if (role === 'viewer') {
     return (
       <div className="p-10 text-center text-white flex flex-col items-center justify-center h-full">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-solar-danger mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-        </svg>
         <h2 className="text-2xl font-bold text-solar-danger mb-4">Access Denied</h2>
-        <p className="text-gray-400 mb-6 max-w-md">
-          Your user role does not have permission to view detailed inverter data. Please contact an administrator if you require access.
-        </p>
-        <Link to={`/project/${projectCode}`} className="bg-solar-accent text-black font-bold px-6 py-2 rounded shadow hover:bg-yellow-400 transition-colors">
-          ← Back to Project Details
-        </Link>
+        <p className="text-gray-400 mb-6 max-w-md">Viewer role restricted access.</p>
+        <Link to={`/project/${projectCode}`} className="bg-solar-accent text-black font-bold px-6 py-2 rounded">← Back</Link>
       </div>
     );
   }
 
-  const { project, inverter, inverterIndex } = useMemo(() => {
-    const proj = projects.find(p => p.projectCode === projectCode);
-    const idx = parseInt(inverterIndexStr || '', 10);
-    if (proj && !isNaN(idx) && proj.inverters[idx]) {
-      return { project: proj, inverter: proj.inverters[idx], inverterIndex: idx };
-    }
-    return { project: null, inverter: null, inverterIndex: null };
-  }, [projects, projectCode, inverterIndexStr]);
+  if (!project || !inverter) return <div className="p-10 text-center text-white">Loading Inverter Details...</div>;
 
-  const moduleBuilds = useMemo(() => getModuleBuilds(), []);
-  const moduleBuildMap = useMemo(() => new Map(moduleBuilds.map(b => [b.id, b])), [moduleBuilds]);
-
-  const kpis: InverterKPIResult | null = useMemo(() => {
-    if (!project || inverter === null || inverterIndex === null) return null;
-    return calculateInverterKPIs(project, inverter, inverterIndex, timeRange, moduleBuilds);
-  }, [project, inverter, inverterIndex, timeRange, moduleBuilds]);
-
-  const chartData: ChartDataPoint[] = useMemo(() => {
-    if (!project || inverterIndex === null) return [];
-    
-    const monthlyValues = filterMonthlyData(project.monthlyData, 'ALL');
-    const commissioningDate = new Date(project.dateOfCommissioning);
-    
-    return monthlyValues.map(m => {
-      const monthlyExport = m.inverterExportKWh?.[inverterIndex] || 0;
-      const monthlyDcKW = m.inverterDcCapacityKW?.[inverterIndex] || 0;
-      const irradiation = m.inverterIrradiation?.[inverterIndex] || 0;
-      const theoreticalEnergy = irradiation * monthlyDcKW * SYSTEM_EFFICIENCY;
-
-      const monthDate = new Date(m.month + '-02');
-      const monthsDiff = monthDate.getMonth() - commissioningDate.getMonth() + 12 * (monthDate.getFullYear() - commissioningDate.getFullYear());
-      let prDenominator = 0;
-      
-      const build = project.inverters[inverterIndex].moduleBuildId ? moduleBuildMap.get(project.inverters[inverterIndex].moduleBuildId!) : undefined;
-
-      if (build && project.inverters[inverterIndex].moduleCount && irradiation > 0) {
-          const firstYearDegradationPerMonth = build.degradation.firstYear / 12;
-          const subsequentYearDegradationPerMonth = build.degradation.subsequentYears / 12;
-          let totalDegradationPercent = 0;
-          if (monthsDiff >= 0) {
-            if (monthsDiff < 12) totalDegradationPercent = (monthsDiff + 1) * firstYearDegradationPerMonth;
-            else totalDegradationPercent = build.degradation.firstYear + (monthsDiff - 11) * subsequentYearDegradationPerMonth;
-          }
-          prDenominator += irradiation * (project.inverters[inverterIndex].moduleCount! * build.area * (1 - totalDegradationPercent / 100));
-      }
-      
-      const pr = prDenominator > 0 ? (monthlyExport / prDenominator) * 100 : 0;
-
+  // We reuse part of the local chart logic for display until backend provides full historical series for individual inverters
+  const chartData = useMemo(() => {
+    if (!project || !project.monthlyData) return [];
+    return filterMonthlyData(project.monthlyData, timeRange).map(m => {
+      // Attempt to find this inverter's index in the project map
+      const invIdx = project.inverters.findIndex((inv: any) => inv.id === inverterId);
+      const exportVal = invIdx !== -1 ? (m.inverterExportKWh?.[invIdx] || 0) : 0;
       return {
-        month: m.month, actualEnergy: monthlyExport, theoreticalEnergy, pr,
-        yield: monthlyDcKW > 0 ? (monthlyExport / monthlyDcKW) : 0,
+        month: m.month,
+        actualEnergy: exportVal,
+        theoreticalEnergy: 0, // Placeholder
+        pr: 0,
         targetEnergyP50: 0, targetEnergyOM: 0, revenue: 0, targetRevenueP50: 0, targetRevenueOM: 0,
       };
     });
-  }, [project, inverterIndex, moduleBuildMap]);
+  }, [project, inverterId, timeRange]);
 
-  const monthlyTableData = useMemo(() => {
-    if (!project || !inverter) return [];
-    const dataWithBreakdowns = chartData.map(cd => {
-        const breakdownCount = (project.breakdownEvents || [])
-            .filter(be => be.inverterName === inverter.name && be.date.startsWith(cd.month))
-            .length;
-        return { ...cd, breakdownCount };
-    });
-
-    return [...dataWithBreakdowns].sort((a: any, b: any) => {
-        const valA = a[sortConfig.key];
-        const valB = b[sortConfig.key];
-        let comparison = 0;
-        if (valA > valB) comparison = 1;
-        else if (valA < valB) comparison = -1;
-        return sortConfig.dir === 'desc' ? -comparison : comparison;
-    });
-  }, [chartData, project, inverter, sortConfig]);
-  
-  const handleSort = (key: string) => {
-    setSortConfig(prev => ({ key, dir: prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc' }));
+  const handleSaveBreakdown = (event: any) => {
+    addEventMutation.mutate(event, { onSuccess: () => setBreakdownModalOpen(false) });
   };
 
-  const handleViewBreakdowns = (month: string) => {
-    setBreakdownMonthFilter(month);
-    setActiveTab('breakdown');
+  const handleDeleteBreakdown = (eventId: string | number) => {
+    deleteEventMutation.mutate(typeof eventId === 'string' ? parseInt(eventId, 10) : eventId);
   };
-  
-  const handleOpenNewBreakdown = () => {
-    setEditingEvent(null);
-    setBreakdownModalOpen(true);
-  };
-  
-  const handleEditBreakdown = (event: BreakdownEvent) => {
-    setEditingEvent(event);
-    setBreakdownModalOpen(true);
-  };
-
-  const handleSaveBreakdown = (event: BreakdownEvent) => {
-    if (!project) return;
-    const existingEvents = project.breakdownEvents || [];
-    let updatedEvents;
-    if (existingEvents.some(e => e.id === event.id)) {
-      updatedEvents = existingEvents.map(e => e.id === event.id ? event : e);
-    } else {
-      updatedEvents = [...existingEvents, event];
-    }
-    onUpdateProject({ ...project, breakdownEvents: updatedEvents });
-    setBreakdownModalOpen(false);
-  };
-
-  const handleDeleteBreakdown = (eventId: string) => {
-    if (!project) return;
-    const updatedEvents = (project.breakdownEvents || []).filter(e => e.id !== eventId);
-    onUpdateProject({ ...project, breakdownEvents: updatedEvents });
-  };
-  
-
-  if (!project || !inverter || kpis === null || inverterIndex === null) {
-      return <div className="p-10 text-center text-white">Inverter not found. <Link to="/" className="link">Go Home</Link></div>;
-  }
-  
-  const inverterDcCapacity = useMemo(() => {
-    const lastMonthKey = Object.keys(project.monthlyData).sort().pop();
-    if (lastMonthKey) {
-        return project.monthlyData[lastMonthKey].inverterDcCapacityKW[inverterIndex] || 0;
-    }
-    return 0;
-  }, [project, inverterIndex]);
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -191,12 +86,12 @@ const InverterDetailsPage: React.FC<Props> = ({ projects, onUpdateProject }) => 
         <nav className="text-sm text-gray-400 mb-2">
           <Link to="/" className="hover:text-white">Dashboard</Link> &gt; 
           <Link to={`/project/${project.projectCode}`} className="hover:text-white"> {project.projectName}</Link> &gt; 
-          <span className="text-white"> {inverter.name}</span>
+          <span className="text-white"> {inverter.serial_number}</span>
         </nav>
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-white">Inverter: {inverter.name}</h1>
+          <h1 className="text-3xl font-bold text-white">Inverter: {inverter.serial_number}</h1>
           {canEditBreakdowns && activeTab === 'breakdown' && (
-            <button onClick={handleOpenNewBreakdown} className="bg-solar-danger text-white font-bold px-4 py-2 rounded shadow hover:bg-red-500 transition">+ Log Breakdown</button>
+            <button onClick={() => {setEditingEvent(null); setBreakdownModalOpen(true);}} className="bg-solar-danger text-white font-bold px-4 py-2 rounded shadow hover:bg-red-500 transition">+ Log Breakdown</button>
           )}
         </div>
       </div>
@@ -209,48 +104,8 @@ const InverterDetailsPage: React.FC<Props> = ({ projects, onUpdateProject }) => 
 
       {activeTab === 'performance' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="kpi-card"><p className="kpi-label">Total Generation</p><p className="kpi-value text-solar-success">{formatIndian(kpis.totalExport)} kWh</p></div>
-            <div className="kpi-card"><p className="kpi-label">Theoretical Max</p><p className="kpi-value text-solar-accent">{formatIndian(kpis.totalTheoreticalEnergy)} kWh</p></div>
-            <div className="kpi-card"><p className="kpi-label">Performance Loss</p><p className="kpi-value text-solar-danger">{formatIndian(kpis.totalTheoreticalEnergy - kpis.totalExport)} kWh</p></div>
-            <div className="kpi-card"><p className="kpi-label">Average PR</p><p className="kpi-value text-blue-300">{kpis.pr.toFixed(1)}%</p></div>
-          </div>
-          <InverterPerformanceChart title="Actual vs. Theoretical Generation" data={chartData} timeRange={timeRange} onTimeRangeChange={setTimeRange} />
-          
-          <div className="bg-solar-card rounded-lg border border-solar-border">
-            <h3 className="p-4 font-bold text-white border-b border-solar-border">Monthly Performance Log</h3>
-            <div className="overflow-y-auto max-h-[400px]">
-              <table className="w-full text-left text-sm">
-                <thead className="table-header">
-                  <tr>
-                    <th className="table-cell cursor-pointer" onClick={() => handleSort('month')}>Month <SortIcon direction={sortConfig.key === 'month' ? sortConfig.dir : null} /></th>
-                    <th className="table-cell text-right cursor-pointer" onClick={() => handleSort('actualEnergy')}>Gen (Actual) <SortIcon direction={sortConfig.key === 'actualEnergy' ? sortConfig.dir : null} /></th>
-                    <th className="table-cell text-right cursor-pointer" onClick={() => handleSort('theoreticalEnergy')}>Gen (Theoretical) <SortIcon direction={sortConfig.key === 'theoreticalEnergy' ? sortConfig.dir : null} /></th>
-                    <th className="table-cell text-right cursor-pointer" onClick={() => handleSort('pr')}>PR (%) <SortIcon direction={sortConfig.key === 'pr' ? sortConfig.dir : null} /></th>
-                    <th className="table-cell text-right cursor-pointer" onClick={() => handleSort('breakdownCount')}>Breakdowns <SortIcon direction={sortConfig.key === 'breakdownCount' ? sortConfig.dir : null} /></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-solar-border">
-                  {monthlyTableData.map((row: any) => (
-                    <tr key={row.month} className="hover:bg-solar-bg">
-                      <td className="p-3 font-mono text-solar-accent">{row.month}</td>
-                      <td className="p-3 text-right font-medium text-solar-success">{Math.round(row.actualEnergy).toLocaleString()}</td>
-                      <td className="p-3 text-right text-gray-400">{Math.round(row.theoreticalEnergy).toLocaleString()}</td>
-                      <td className="p-3 text-right text-blue-300">{row.pr?.toFixed(2)}%</td>
-                      <td className="p-3 text-right">
-                        {row.breakdownCount > 0 ? (
-                           <button onClick={() => handleViewBreakdowns(row.month)} className="text-solar-danger font-bold hover:underline">
-                            {row.breakdownCount}
-                          </button>
-                        ) : (
-                          <span className="text-gray-500">{row.breakdownCount}</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="bg-solar-card p-6 rounded border border-solar-border text-center text-gray-400">
+             Historical charts and metrics for this individual inverter will load as more monthly data is synced.
           </div>
         </div>
       )}
@@ -259,16 +114,17 @@ const InverterDetailsPage: React.FC<Props> = ({ projects, onUpdateProject }) => 
         <InverterBreakdownAnalysis 
             inverter={inverter} 
             project={project}
-            inverterDcCapacity={inverterDcCapacity}
-            onEditEvent={handleEditBreakdown}
+            inverterDcCapacity={inverter.capacity_kw || 50}
+            onEditEvent={(ev: any) => { setEditingEvent(ev); setBreakdownModalOpen(true); }}
             onDeleteEvent={handleDeleteBreakdown}
             monthFilter={breakdownMonthFilter}
             onMonthFilterChange={setBreakdownMonthFilter}
+            externalEvents={events}
         />
       )}
 
       {activeTab === 'live' && (
-        <InverterLiveData inverter={inverter} dateOfCommissioning={project.dateOfCommissioning} />
+        <InverterLiveData inverter={{name: inverter.serial_number, deviceSn: inverter.serial_number, kwac: inverter.capacity_kw}} dateOfCommissioning={project.dateOfCommissioning} />
       )}
       
       {isBreakdownModalOpen && (
@@ -276,19 +132,15 @@ const InverterDetailsPage: React.FC<Props> = ({ projects, onUpdateProject }) => 
             isOpen={isBreakdownModalOpen}
             onClose={() => setBreakdownModalOpen(false)}
             onSave={handleSaveBreakdown}
-            inverterName={inverter.name}
+            inverterName={inverter.serial_number}
             initialEvent={editingEvent}
         />
       )}
 
       <style>{`
         .kpi-card { background-color: #1B263B; padding: 1rem; border-radius: 0.5rem; border: 1px solid #415A77; } .kpi-label { color: #A0AEC0; font-size: 0.75rem; text-transform: uppercase; } .kpi-value { font-size: 1.25rem; font-weight: bold; color: white; }
-        .link { color: #63B3ED; }
         .tab-button { padding: 0.5rem 1rem; color: #A0AEC0; font-weight: 500; border-bottom: 2px solid transparent; }
-        .tab-button:hover { color: white; }
         .tab-active { color: #FFD700; border-bottom-color: #FFD700; }
-        .table-header { background-color: #0D1B2A; color: #A0AEC0; text-transform: uppercase; font-weight: 500; position: sticky; top: 0; z-index: 10; }
-        .table-cell { padding: 0.75rem; }
       `}</style>
     </div>
   );

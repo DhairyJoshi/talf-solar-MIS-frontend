@@ -169,7 +169,6 @@ const ProjectDetailsPage: React.FC = () => {
           isOpen={isEntryModalOpen} 
           onClose={() => setEntryModalOpen(false)} 
           project={project} 
-          onSave={() => {}}
         />
       )}
       <style>{`.kpi-card { background-color: #1B263B; padding: 1rem; border-radius: 0.5rem; border: 1px solid #415A77; } .kpi-label { color: #A0AEC0; font-size: 0.75rem; text-transform: uppercase; } .kpi-value { font-size: 1.25rem; font-weight: bold; color: white; } .link { color: #63B3ED; }`}</style>

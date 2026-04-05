@@ -9,9 +9,10 @@ interface Props {
   inverter: Inverter;
   inverterDcCapacity: number;
   onEditEvent: (event: BreakdownEvent) => void;
-  onDeleteEvent: (eventId: string) => void;
+  onDeleteEvent: (eventId: string | number) => void;
   monthFilter: string;
   onMonthFilterChange: (month: string) => void;
+  externalEvents?: BreakdownEvent[];
 }
 
 const formatMinutes = (mins: number) => {
@@ -27,14 +28,15 @@ const SortIcon = ({ direction }: { direction: 'asc' | 'desc' | null }) => {
 };
 
 
-const InverterBreakdownAnalysis: React.FC<Props> = ({ project, inverter, inverterDcCapacity, onEditEvent, onDeleteEvent, monthFilter, onMonthFilterChange }) => {
+const InverterBreakdownAnalysis: React.FC<Props> = ({ project, inverter, inverterDcCapacity, onEditEvent, onDeleteEvent, monthFilter, onMonthFilterChange, externalEvents }) => {
   const { currentUser } = useAuth();
   const [sortConfig, setSortConfig] = useState<{ key: keyof BreakdownEvent, dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' });
 
   const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'operations';
 
   const { filteredEvents, stats, daysInMonth } = useMemo(() => {
-    const events = (project.breakdownEvents || [])
+    const dataSource = externalEvents || project.breakdownEvents || [];
+    const events = dataSource
       .filter(e => e.inverterName === inverter.name && e.date.startsWith(monthFilter));
     
     const [year, month] = monthFilter.split('-').map(Number);
@@ -42,7 +44,7 @@ const InverterBreakdownAnalysis: React.FC<Props> = ({ project, inverter, inverte
 
     const calculatedStats = calculateBreakdownStats(events, inverterDcCapacity, d);
     return { filteredEvents: events, stats: calculatedStats, daysInMonth: d };
-  }, [project.breakdownEvents, inverter.name, monthFilter, inverterDcCapacity]);
+  }, [project.breakdownEvents, inverter.name, monthFilter, inverterDcCapacity, externalEvents]);
 
   const sortedEvents = useMemo(() => {
     return [...filteredEvents].sort((a, b) => {

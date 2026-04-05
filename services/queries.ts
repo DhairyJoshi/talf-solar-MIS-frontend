@@ -177,6 +177,17 @@ export const useProxyData = (inverterSn: string) => {
   });
 };
 
+export const useDayCurve = (inverterSn: string, date: string) => {
+  return useQuery({
+    queryKey: ['proxy', inverterSn, 'day-curve', date],
+    queryFn: async () => {
+      if (!inverterSn) throw new Error("No Inverter SN");
+      return await apiClient(`/proxy/inverters/${inverterSn}/day-curve?date=${date}`);
+    },
+    enabled: !!inverterSn && !!date,
+  });
+};
+
 export const useKPIs = (projectCode: string) => {
   const id = extractId(projectCode);
   return useQuery({
@@ -201,6 +212,17 @@ export const useMonthlyData = (projectCode: string) => {
     queryKey: ['projects', id, 'monthly-data'],
     queryFn: () => apiClient<any[]>(`/projects/${id}/monthly-data`),
     enabled: !!id,
+  });
+};
+export const useAddMonthlyData = (projectCode: string) => {
+  const id = extractId(projectCode);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => apiClient(`/projects/${id}/monthly-data`, { method: 'POST', body: JSON.stringify(data) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects', id, 'monthly-data'] });
+      queryClient.invalidateQueries({ queryKey: ['projects', id, 'kpis'] });
+    },
   });
 };
 
@@ -244,6 +266,14 @@ export const useAddBreakdownEvent = (inverterId: number) => {
   });
 };
 
+export const useDeleteBreakdownEvent = (inverterId: number) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: number) => apiClient(`/inverters/breakdown-events/${eventId}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inverters', inverterId, 'events'] }),
+  });
+};
+
 export const useModuleBuilds = () => {
   return useQuery({
     queryKey: ['module-builds'],
@@ -255,6 +285,14 @@ export const useCreateModuleBuild = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (build: any) => apiClient('/module-builds/', { method: 'POST', body: JSON.stringify(build) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['module-builds'] }),
+  });
+};
+
+export const useDeleteModuleBuild = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number | string) => apiClient(`/module-builds/${id}`, { method: 'DELETE' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['module-builds'] }),
   });
 };

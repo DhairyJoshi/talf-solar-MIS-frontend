@@ -18,13 +18,16 @@ export interface ModuleBuild {
 }
 
 export interface Inverter {
+  id?: number; // Backend ID
   name: string;
   kwac: number; // Fixed AC capacity
-  solisSn?: string; // Kept for backward compatibility / reference
-  deviceSn?: string; // The primary SN from the API
-  psKey?: string; // The unique device key from the API for real-time data
+  solisSn?: string; 
+  deviceSn?: string;
+  psKey?: string;
   moduleCount?: number;
   moduleBuildId?: string;
+  capacity_kw?: number; // Backend field name
+  serial_number?: string; // Backend field name
 }
 
 export interface MonthlyData {
@@ -49,7 +52,7 @@ export enum BreakdownReason {
 }
 
 export interface BreakdownEvent {
-  id: string; // Unique ID for the event
+  id: string | number; // Support both local UUIDs and backend integer IDs
   inverterName: string; // Link to the specific inverter
   date: string; // YYYY-MM-DD
   startTime: string; // HH:MM

@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ModuleBuild } from '../types';
-import * as moduleBuildService from '../services/moduleBuildService';
+import { useModuleBuilds, useCreateModuleBuild, useDeleteModuleBuild } from '../services/queries';
 
 interface Props {
   isOpen: boolean;
@@ -16,31 +16,21 @@ const emptyBuild: Omit<ModuleBuild, 'id'> = {
 };
 
 const ModuleBuildsModal: React.FC<Props> = ({ isOpen, onClose }) => {
-  const [builds, setBuilds] = useState<ModuleBuild[]>([]);
+  const { data: builds = [] } = useModuleBuilds();
+  const createMutation = useCreateModuleBuild();
+  const deleteMutation = useDeleteModuleBuild();
   const [editingBuild, setEditingBuild] = useState<Partial<ModuleBuild> | null>(null);
-
-  useEffect(() => {
-    if (isOpen) {
-      setBuilds(moduleBuildService.getModuleBuilds());
-    }
-  }, [isOpen]);
 
   const handleSave = () => {
     if (!editingBuild || !editingBuild.name) return;
-
-    if (editingBuild.id) {
-      moduleBuildService.updateModuleBuild(editingBuild as ModuleBuild);
-    } else {
-      moduleBuildService.addModuleBuild(editingBuild as Omit<ModuleBuild, 'id'>);
-    }
-    setBuilds(moduleBuildService.getModuleBuilds());
-    setEditingBuild(null);
+    createMutation.mutate(editingBuild, {
+      onSuccess: () => setEditingBuild(null)
+    });
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = (id: string | number) => {
     if (window.confirm("Are you sure you want to delete this module build?")) {
-      moduleBuildService.deleteModuleBuild(id);
-      setBuilds(moduleBuildService.getModuleBuilds());
+      deleteMutation.mutate(id);
     }
   };
 
