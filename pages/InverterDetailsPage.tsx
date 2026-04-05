@@ -10,11 +10,11 @@ import InverterLiveData from '../components/InverterLiveData';
 import { useInverter, useProject, useBreakdownEvents, useAddBreakdownEvent, useDeleteBreakdownEvent } from '../services/queries';
 
 const formatIndian = (val: number | undefined) => {
-   if (val === undefined || val === null || isNaN(val)) return '-';
-   if (val >= 10000000) return `${(val / 10000000).toFixed(2)} Cr`;
-   if (val >= 100000) return `${(val / 100000).toFixed(2)} L`;
-   if (val >= 1000) return `${(val / 1000).toFixed(1)}k`;
-   return `${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  if (val === undefined || val === null || isNaN(val)) return '-';
+  if (val >= 10000000) return `${(val / 10000000).toFixed(2)} Cr`;
+  if (val >= 100000) return `${(val / 100000).toFixed(2)} L`;
+  if (val >= 1000) return `${(val / 1000).toFixed(1)}k`;
+  return `${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 };
 
 const SortIcon = ({ direction }: { direction: 'asc' | 'desc' | null }) => {
@@ -26,19 +26,34 @@ const InverterDetailsPage: React.FC = () => {
   const { projectCode, inverterId: inverterIdStr } = useParams();
   const inverterId = parseInt(inverterIdStr || '0', 10);
   const { currentUser } = useAuth();
-  
+
   const [timeRange, setTimeRange] = useState<TimeRange>('12M');
   const [activeTab, setActiveTab] = useState<'performance' | 'breakdown' | 'live'>('performance');
   const [isBreakdownModalOpen, setBreakdownModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<BreakdownEvent | null>(null);
   const [breakdownMonthFilter, setBreakdownMonthFilter] = useState<string>(new Date().toISOString().slice(0, 7));
   const [sortConfig, setSortConfig] = useState<{ key: string, dir: 'asc' | 'desc' }>({ key: 'month', dir: 'desc' });
-  
+
   const { data: project } = useProject(projectCode || '');
   const { data: inverter } = useInverter(inverterId);
   const { data: events = [] } = useBreakdownEvents(inverterId);
   const addEventMutation = useAddBreakdownEvent(inverterId);
   const deleteEventMutation = useDeleteBreakdownEvent(inverterId);
+
+  const chartData = useMemo(() => {
+    if (!project || !project.monthlyData) return [];
+    return filterMonthlyData(project.monthlyData, timeRange).map(m => {
+      const invIdx = project.inverters.findIndex((inv: any) => inv.id === inverterId);
+      const exportVal = invIdx !== -1 ? (m.inverterExportKWh?.[invIdx] || 0) : 0;
+      return {
+        month: m.month,
+        actualEnergy: exportVal,
+        theoreticalEnergy: 0,
+        pr: 0,
+        targetEnergyP50: 0, targetEnergyOM: 0, revenue: 0, targetRevenueP50: 0, targetRevenueOM: 0,
+      };
+    });
+  }, [project, inverterId, timeRange]);
 
   const role = currentUser?.role?.toLowerCase();
   const canEditBreakdowns = role === 'admin' || role === 'operations';
@@ -55,23 +70,6 @@ const InverterDetailsPage: React.FC = () => {
 
   if (!project || !inverter) return <div className="p-10 text-center text-white">Loading Inverter Details...</div>;
 
-  // We reuse part of the local chart logic for display until backend provides full historical series for individual inverters
-  const chartData = useMemo(() => {
-    if (!project || !project.monthlyData) return [];
-    return filterMonthlyData(project.monthlyData, timeRange).map(m => {
-      // Attempt to find this inverter's index in the project map
-      const invIdx = project.inverters.findIndex((inv: any) => inv.id === inverterId);
-      const exportVal = invIdx !== -1 ? (m.inverterExportKWh?.[invIdx] || 0) : 0;
-      return {
-        month: m.month,
-        actualEnergy: exportVal,
-        theoreticalEnergy: 0, // Placeholder
-        pr: 0,
-        targetEnergyP50: 0, targetEnergyOM: 0, revenue: 0, targetRevenueP50: 0, targetRevenueOM: 0,
-      };
-    });
-  }, [project, inverterId, timeRange]);
-
   const handleSaveBreakdown = (event: any) => {
     addEventMutation.mutate(event, { onSuccess: () => setBreakdownModalOpen(false) });
   };
@@ -84,14 +82,14 @@ const InverterDetailsPage: React.FC = () => {
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div>
         <nav className="text-sm text-gray-400 mb-2">
-          <Link to="/" className="hover:text-white">Dashboard</Link> &gt; 
-          <Link to={`/project/${project.projectCode}`} className="hover:text-white"> {project.projectName}</Link> &gt; 
+          <Link to="/" className="hover:text-white">Dashboard</Link> &gt;
+          <Link to={`/project/${project.projectCode}`} className="hover:text-white"> {project.projectName}</Link> &gt;
           <span className="text-white"> {inverter.serial_number}</span>
         </nav>
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold text-white">Inverter: {inverter.serial_number}</h1>
           {canEditBreakdowns && activeTab === 'breakdown' && (
-            <button onClick={() => {setEditingEvent(null); setBreakdownModalOpen(true);}} className="bg-solar-danger text-white font-bold px-4 py-2 rounded shadow hover:bg-red-500 transition">+ Log Breakdown</button>
+            <button onClick={() => { setEditingEvent(null); setBreakdownModalOpen(true); }} className="bg-solar-danger text-white font-bold px-4 py-2 rounded shadow hover:bg-red-500 transition">+ Log Breakdown</button>
           )}
         </div>
       </div>
@@ -105,35 +103,35 @@ const InverterDetailsPage: React.FC = () => {
       {activeTab === 'performance' && (
         <div className="space-y-6">
           <div className="bg-solar-card p-6 rounded border border-solar-border text-center text-gray-400">
-             Historical charts and metrics for this individual inverter will load as more monthly data is synced.
+            Historical charts and metrics for this individual inverter will load as more monthly data is synced.
           </div>
         </div>
       )}
 
       {activeTab === 'breakdown' && (
-        <InverterBreakdownAnalysis 
-            inverter={inverter} 
-            project={project}
-            inverterDcCapacity={inverter.capacity_kw || 50}
-            onEditEvent={(ev: any) => { setEditingEvent(ev); setBreakdownModalOpen(true); }}
-            onDeleteEvent={handleDeleteBreakdown}
-            monthFilter={breakdownMonthFilter}
-            onMonthFilterChange={setBreakdownMonthFilter}
-            externalEvents={events}
+        <InverterBreakdownAnalysis
+          inverter={inverter}
+          project={project}
+          inverterDcCapacity={inverter.capacity_kw || 50}
+          onEditEvent={(ev: any) => { setEditingEvent(ev); setBreakdownModalOpen(true); }}
+          onDeleteEvent={handleDeleteBreakdown}
+          monthFilter={breakdownMonthFilter}
+          onMonthFilterChange={setBreakdownMonthFilter}
+          externalEvents={events}
         />
       )}
 
       {activeTab === 'live' && (
-        <InverterLiveData inverter={{name: inverter.serial_number, deviceSn: inverter.serial_number, kwac: inverter.capacity_kw}} dateOfCommissioning={project.dateOfCommissioning} />
+        <InverterLiveData inverter={{ name: inverter.serial_number, deviceSn: inverter.serial_number, kwac: inverter.capacity_kw }} dateOfCommissioning={project.dateOfCommissioning} />
       )}
-      
+
       {isBreakdownModalOpen && (
         <BreakdownEntryModal
-            isOpen={isBreakdownModalOpen}
-            onClose={() => setBreakdownModalOpen(false)}
-            onSave={handleSaveBreakdown}
-            inverterName={inverter.serial_number}
-            initialEvent={editingEvent}
+          isOpen={isBreakdownModalOpen}
+          onClose={() => setBreakdownModalOpen(false)}
+          onSave={handleSaveBreakdown}
+          inverterName={inverter.serial_number}
+          initialEvent={editingEvent}
         />
       )}
 
