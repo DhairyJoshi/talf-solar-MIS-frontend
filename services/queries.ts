@@ -19,22 +19,26 @@ export const extractId = (code: string): number => {
 };
 
 const mapBackendProject = (bp: BackendProject): Project => ({
-  projectCode: `PRJ-${bp.id}`,      
+  id: bp.id,
+  name: bp.name,
+  location: bp.location || 'Unknown',
+  capacity_kw: bp.capacity_kw,
+  projectCode: `PRJ-${bp.id}`,
   projectName: bp.name,
   projectState: bp.location || 'Unknown',
-  projectOwner: 'Talf Solar India',       
+  projectOwner: 'Talf Solar India',
   dateOfCommissioning: bp.created_at,
-  tariff: 4.5,                      
+  tariff: 4.5,
   inverters: bp.inverters.map((inv: any) => ({
     name: inv.serial_number,
     kwac: inv.capacity_kw || 50,
     deviceSn: inv.serial_number,
-    id: inv.id, 
+    id: inv.id,
   })),
-  monthlyData: bp.monthly_data ? 
-    Object.fromEntries(bp.monthly_data.map((m: any) => [m.month, m])) 
-    : {},                  
-  breakdownEvents: [],              
+  monthlyData: bp.monthly_data ?
+    Object.fromEntries(bp.monthly_data.map((m: any) => [m.month, m]))
+    : {},
+  breakdownEvents: [],
 });
 
 export const useProjects = () => {
@@ -49,7 +53,7 @@ export const useProjects = () => {
 
 export const useRegister = () => {
   return useMutation({
-    mutationFn: (newUser: any) => 
+    mutationFn: (newUser: any) =>
       apiClient('/auth/register', {
         method: 'POST',
         body: JSON.stringify(newUser),
@@ -93,7 +97,7 @@ export const useLogin = () => {
 export const useCreateProject = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (newProject: { name: string, location: string, capacity_kw: number }) => 
+    mutationFn: (newProject: { name: string, location: string, capacity_kw: number }) =>
       apiClient('/projects/', {
         method: 'POST',
         body: JSON.stringify(newProject),
@@ -107,16 +111,24 @@ export const useCreateProject = () => {
 export const useAddInverter = (projectId: number) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (newInverter: { serial_number: string, vendor_type: string, api_key: string, api_secret: string }) => 
+    mutationFn: (newInverter: { 
+      serial_number: string, 
+      vendor_type: string, 
+      api_key: string, 
+      api_secret: string,
+      module_build_id: number 
+    }) =>
       apiClient(`/projects/${projectId}/inverters`, {
         method: 'POST',
         body: JSON.stringify(newInverter),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId] });
     },
   });
 };
+
 
 export const useTriggerSync = (projectCode: string) => {
   const projectId = extractId(projectCode);
@@ -141,7 +153,13 @@ export const useUpdateProject = (projectCode: string) => {
   const id = extractId(projectCode);
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (updated: any) => apiClient(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(updated) }),
+    mutationFn: (updated: Project) => {
+      const { name, location, capacity_kw } = updated;
+      return apiClient(`/projects/${id}`, { 
+        method: 'PUT', 
+        body: JSON.stringify({ name, location, capacity_kw }) 
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       queryClient.invalidateQueries({ queryKey: ['projects', id] });
@@ -173,7 +191,7 @@ export const useProxyData = (inverterId: number) => {
       return await apiClient<ProxyLiveStatus>(`/proxy/inverters/${inverterId}/live-status`);
     },
     enabled: !!inverterId,
-    refetchInterval: 60000, 
+    refetchInterval: 60000,
   });
 };
 
@@ -306,7 +324,7 @@ export const useMe = () => {
       if (user && user.role) {
         const currentToken = useAuthStore.getState().token;
         if (currentToken) {
-           setToken(currentToken, user.role.toLowerCase());
+          setToken(currentToken, user.role.toLowerCase());
         }
       }
       return user;

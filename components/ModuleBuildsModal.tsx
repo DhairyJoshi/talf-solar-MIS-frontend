@@ -9,10 +9,10 @@ interface Props {
 }
 
 const emptyBuild: Omit<ModuleBuild, 'id'> = {
-  name: '',
-  wp: 0,
-  area: 0,
-  degradation: { firstYear: 2.0, subsequentYears: 0.55 },
+  manufacturer: '',
+  model_name: '',
+  rated_power_wp: 0,
+  degradation_rate_pct: 0.5,
 };
 
 const ModuleBuildsModal: React.FC<Props> = ({ isOpen, onClose }) => {
@@ -22,13 +22,13 @@ const ModuleBuildsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [editingBuild, setEditingBuild] = useState<Partial<ModuleBuild> | null>(null);
 
   const handleSave = () => {
-    if (!editingBuild || !editingBuild.name) return;
+    if (!editingBuild || !editingBuild.manufacturer || !editingBuild.model_name) return;
     createMutation.mutate(editingBuild, {
       onSuccess: () => setEditingBuild(null)
     });
   };
 
-  const handleDelete = (id: string | number) => {
+  const handleDelete = (id: number) => {
     if (window.confirm("Are you sure you want to delete this module build?")) {
       deleteMutation.mutate(id);
     }
@@ -39,7 +39,7 @@ const ModuleBuildsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-70 backdrop-blur-sm">
+    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-70 backdrop-blur-sm">
       <div className="bg-solar-bg w-full max-w-4xl m-4 rounded-lg border border-solar-border shadow-2xl flex flex-col max-h-[90vh]">
         <div className="p-6 border-b border-solar-border flex justify-between items-center">
           <h2 className="text-xl font-bold text-solar-accent">Manage Module Builds</h2>
@@ -50,15 +50,15 @@ const ModuleBuildsModal: React.FC<Props> = ({ isOpen, onClose }) => {
           {/* List View */}
           <div className="flex flex-col">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="font-semibold">Existing Builds</h3>
+              <h3 className="font-semibold text-white">Existing Database</h3>
               <button onClick={startNew} className="text-sm bg-solar-accent text-black px-3 py-1 rounded font-bold hover:bg-yellow-300 transition">+ New</button>
             </div>
             <div className="space-y-2 overflow-y-auto pr-2">
               {builds.map(build => (
                 <div key={build.id} className="bg-solar-card border border-solar-border p-3 rounded flex justify-between items-center">
                   <div>
-                    <p className="font-semibold text-white">{build.name}</p>
-                    <p className="text-xs text-gray-400">{build.wp} Wp · {build.area} m² · {build.degradation.firstYear}% / {build.degradation.subsequentYears}% p.a.</p>
+                    <p className="font-semibold text-white">{build.manufacturer} <span className="text-solar-accent">{build.model_name}</span></p>
+                    <p className="text-xs text-gray-400">{build.rated_power_wp} Wp · {build.degradation_rate_pct}% p.a. degradation</p>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={() => setEditingBuild(build)} className="text-xs text-blue-400 hover:text-blue-300">Edit</button>
@@ -74,21 +74,18 @@ const ModuleBuildsModal: React.FC<Props> = ({ isOpen, onClose }) => {
           <div>
             {editingBuild ? (
               <div className="space-y-4 bg-solar-card p-4 rounded-lg border border-solar-border">
-                <h3 className="font-semibold">{editingBuild.id ? 'Edit Build' : 'New Build'}</h3>
+                <h3 className="font-semibold text-white">{editingBuild.id ? 'Edit Build' : 'New Build'}</h3>
                 <div>
-                  <label className="label">Build Name</label>
-                  <input type="text" value={editingBuild.name} onChange={e => setEditingBuild(p => ({...p, name: e.target.value}))} className="input-field" />
+                  <label className="label">Manufacturer</label>
+                  <input type="text" value={editingBuild.manufacturer} onChange={e => setEditingBuild(p => ({ ...p, manufacturer: e.target.value }))} className="input-field" placeholder="e.g. Jinko Solar" />
+                </div>
+                <div>
+                  <label className="label">Model Name</label>
+                  <input type="text" value={editingBuild.model_name} onChange={e => setEditingBuild(p => ({ ...p, model_name: e.target.value }))} className="input-field" placeholder="e.g. Tiger Pro 550" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div><label className="label">Wp</label><input type="number" value={editingBuild.wp} onChange={e => setEditingBuild(p => ({...p, wp: parseFloat(e.target.value)}))} className="input-field" /></div>
-                  <div><label className="label">Area (m²)</label><input type="number" step="0.01" value={editingBuild.area} onChange={e => setEditingBuild(p => ({...p, area: parseFloat(e.target.value)}))} className="input-field" /></div>
-                </div>
-                <div>
-                  <label className="label">Degradation (%)</label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><label className="label text-xs">First Year</label><input type="number" step="0.01" value={editingBuild.degradation?.firstYear} onChange={e => setEditingBuild(p => ({...p, degradation: {...p.degradation!, firstYear: parseFloat(e.target.value)}}))} className="input-field" /></div>
-                    <div><label className="label text-xs">Subsequent</label><input type="number" step="0.01" value={editingBuild.degradation?.subsequentYears} onChange={e => setEditingBuild(p => ({...p, degradation: {...p.degradation!, subsequentYears: parseFloat(e.target.value)}}))} className="input-field" /></div>
-                  </div>
+                  <div><label className="label">Rated Power (Wp)</label><input type="number" value={editingBuild.rated_power_wp} onChange={e => setEditingBuild(p => ({ ...p, rated_power_wp: parseFloat(e.target.value) }))} className="input-field" /></div>
+                  <div><label className="label">Degradation (% p.a.)</label><input type="number" step="0.01" value={editingBuild.degradation_rate_pct} onChange={e => setEditingBuild(p => ({ ...p, degradation_rate_pct: parseFloat(e.target.value) }))} className="input-field" /></div>
                 </div>
                 <div className="flex justify-end gap-2 pt-4">
                   <button onClick={() => setEditingBuild(null)} className="px-3 py-1 text-sm rounded text-gray-300 hover:bg-solar-border">Cancel</button>

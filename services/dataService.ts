@@ -18,7 +18,7 @@ export const filterMonthlyData = (monthlyData: Record<string, MonthlyData>, rang
 export const calculateKPIs = (project: Project, timeRange: TimeRange = 'ALL', moduleBuilds: ModuleBuild[] = []): KPIResult => {
   const moduleBuildMap = new Map(moduleBuilds.map(b => [b.id, b]));
   const { totalKWac } = calculateProjectStaticCapacity(project);
-  
+
   let totalExport = 0;
   let totalImport = 0;
   let totalTargetP50 = 0;
@@ -27,10 +27,10 @@ export const calculateKPIs = (project: Project, timeRange: TimeRange = 'ALL', mo
   let prDenominator = 0;
   let dcCufDenominator = 0;
   let acCufDenominator = 0;
-  
+
   const months = filterMonthlyData(project.monthlyData, timeRange);
   const commissioningDate = new Date(project.dateOfCommissioning);
-  
+
   months.forEach(m => {
     const year = parseInt(m.month.split('-')[0]);
     const month = parseInt(m.month.split('-')[1]);
@@ -46,33 +46,26 @@ export const calculateKPIs = (project: Project, timeRange: TimeRange = 'ALL', mo
     totalImport += m.electricityImportedKWh || 0;
     totalTargetP50 += m.targetNetKWhP50 || 0;
     totalTargetOM += monthlyTotalTargetOM;
-    
+
     const monthDate = new Date(m.month + '-02');
     const monthsDiff = monthDate.getMonth() - commissioningDate.getMonth() + 12 * (monthDate.getFullYear() - commissioningDate.getFullYear());
 
     const monthlyPrDenominator = project.inverters.reduce((sum, inv, index) => {
-        const build = inv.moduleBuildId ? moduleBuildMap.get(inv.moduleBuildId) : undefined;
-        const irradiation = (m.inverterIrradiation || [])[index] || 0;
+      const build = inv.moduleBuildId ? moduleBuildMap.get(inv.moduleBuildId) : undefined;
+      const irradiation = (m.inverterIrradiation || [])[index] || 0;
 
-        if (build && inv.moduleCount && irradiation > 0) {
-            const firstYearDegradationPerMonth = build.degradation.firstYear / 12;
-            const subsequentYearDegradationPerMonth = build.degradation.subsequentYears / 12;
-            let totalDegradationPercent = 0;
+      if (build && inv.moduleCount && irradiation > 0) {
+        const annualDegradation = build.degradation_rate_pct / 100;
+        const yearsSinceCommissioning = Math.max(0, monthsDiff / 12);
+        const totalDegradationFactor = Math.max(0, 1 - (yearsSinceCommissioning * annualDegradation));
 
-            if (monthsDiff >= 0) {
-              if (monthsDiff < 12) {
-                  totalDegradationPercent = (monthsDiff + 1) * firstYearDegradationPerMonth;
-              } else {
-                  totalDegradationPercent = build.degradation.firstYear + (monthsDiff - 11) * subsequentYearDegradationPerMonth;
-              }
-            }
-            
-            const degradationFactor = 1 - totalDegradationPercent / 100;
-            const degradedArea = inv.moduleCount * build.area * degradationFactor;
+        // Standard PR formula: Actual_Energy / (Irradiation * Cap_stc / G_stc)
+        // Cap_stc = moduleCount * rated_power_wp
+        const degradedCapacityKW = (inv.moduleCount * build.rated_power_wp * totalDegradationFactor) / 1000;
 
-            return sum + (irradiation * degradedArea);
-        }
-        return sum;
+        return sum + (irradiation * degradedCapacityKW);
+      }
+      return sum;
     }, 0);
 
     prDenominator += monthlyPrDenominator;
@@ -91,7 +84,7 @@ export const calculateKPIs = (project: Project, timeRange: TimeRange = 'ALL', mo
     const lastMonth = months[months.length - 1];
     latestTotalKWdc = (lastMonth.inverterDcCapacityKW || []).reduce((sum, dc) => sum + dc, 0);
   }
-  
+
   const yieldVal = latestTotalKWdc > 0 ? (netEnergy / latestTotalKWdc) : 0;
   const averageDailyYield = (latestTotalKWdc > 0 && totalDays > 0) ? (netEnergy / latestTotalKWdc / totalDays) : 0;
   const pr = prDenominator > 0 ? (netEnergy / prDenominator) * 100 : 0;
@@ -128,10 +121,10 @@ export const calculateInverterKPIs = (project: Project, inverter: Inverter, inve
   let prDenominator = 0;
   let dcCufDenominator = 0;
   let acCufDenominator = 0;
-  
+
   const months = filterMonthlyData(project.monthlyData, timeRange);
   const commissioningDate = new Date(project.dateOfCommissioning);
-  
+
   months.forEach(m => {
     const year = parseInt(m.month.split('-')[0]);
     const month = parseInt(m.month.split('-')[1]);
@@ -143,32 +136,23 @@ export const calculateInverterKPIs = (project: Project, inverter: Inverter, inve
     const monthlyExport = (m.inverterExportKWh || [])[inverterIndex] || 0;
     const monthlyTargetOM = (m.inverterTargetOMKWh || [])[inverterIndex] || 0;
     const irradiation = (m.inverterIrradiation || [])[inverterIndex] || 0;
-    
+
     totalExport += monthlyExport;
     totalTargetOM += monthlyTargetOM;
     totalTheoreticalEnergy += irradiation * monthlyDcKW * SYSTEM_EFFICIENCY;
-    
+
     const monthDate = new Date(m.month + '-02');
     const monthsDiff = monthDate.getMonth() - commissioningDate.getMonth() + 12 * (monthDate.getFullYear() - commissioningDate.getFullYear());
 
     const build = inverter.moduleBuildId ? moduleBuildMap.get(inverter.moduleBuildId) : undefined;
 
     if (build && inverter.moduleCount && irradiation > 0) {
-        const firstYearDegradationPerMonth = build.degradation.firstYear / 12;
-        const subsequentYearDegradationPerMonth = build.degradation.subsequentYears / 12;
-        let totalDegradationPercent = 0;
+      const annualDegradation = build.degradation_rate_pct / 100;
+      const yearsSinceCommissioning = Math.max(0, monthsDiff / 12);
+      const totalDegradationFactor = Math.max(0, 1 - (yearsSinceCommissioning * annualDegradation));
 
-        if (monthsDiff >= 0) {
-          if (monthsDiff < 12) {
-              totalDegradationPercent = (monthsDiff + 1) * firstYearDegradationPerMonth;
-          } else {
-              totalDegradationPercent = build.degradation.firstYear + (monthsDiff - 11) * subsequentYearDegradationPerMonth;
-          }
-        }
-        
-        const degradationFactor = 1 - totalDegradationPercent / 100;
-        const degradedArea = inverter.moduleCount * build.area * degradationFactor;
-        prDenominator += irradiation * degradedArea;
+      const degradedCapacityKW = (inverter.moduleCount * build.rated_power_wp * totalDegradationFactor) / 1000;
+      prDenominator += irradiation * degradedCapacityKW;
     }
 
     dcCufDenominator += monthlyDcKW * hours;
@@ -212,7 +196,7 @@ export const calculateBreakdownStats = (events: BreakdownEvent[], inverterDcCapa
     const [startH, startM] = event.startTime.split(':').map(Number);
     const [endH, endM] = event.endTime.split(':').map(Number);
     const durationMinutes = (endH * 60 + endM) - (startH * 60 + startM);
-    if(durationMinutes < 0) return;
+    if (durationMinutes < 0) return;
     const giiLoss = event.giiAtEnd - event.giiAtStart;
     const generationLossKwh = giiLoss * inverterDcCapacity * SYSTEM_EFFICIENCY;
     stats.totalBreakdownDurationMinutes += durationMinutes;

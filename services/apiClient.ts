@@ -25,6 +25,10 @@ export const apiClient = async <T>(endpoint: string, options: RequestInit = {}):
     throw new Error(`API Request Failed: ${response.status} ${response.statusText}`);
   }
 
+  if (response.status === 204) {
+    return {} as T;
+  }
+
   const data = await response.json();
   return data;
 };

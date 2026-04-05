@@ -134,6 +134,23 @@ const InverterLiveData: React.FC<Props> = ({ inverter, dateOfCommissioning }) =>
     );
   }
 
+  if (!proxyData) {
+    return (
+      <div className="text-center py-20 bg-solar-card rounded-xl border border-solar-border border-dashed animate-fadeIn mx-auto max-w-2xl mt-10">
+        <div className="w-16 h-16 bg-solar-bg rounded-full flex items-center justify-center mx-auto mb-4 border border-solar-border">
+          <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+          </svg>
+        </div>
+        <h3 className="text-white font-bold text-lg mb-2 uppercase tracking-wide">Live Stream unavailable</h3>
+        <p className="text-gray-400 max-w-sm mx-auto text-sm leading-relaxed px-4">
+          Real-time connection not established for Inverter <span className="text-solar-accent font-mono">{inverter.serial_number || inverter.name}</span>. 
+          <br /><span className="opacity-70">The backend requires a valid Vendor/API Secret to initiate a live telemetry feed.</span>
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fadeIn">
       <div className="flex justify-between items-end">

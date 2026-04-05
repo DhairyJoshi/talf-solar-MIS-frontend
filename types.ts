@@ -7,25 +7,22 @@ export interface User {
 }
 
 export interface ModuleBuild {
-  id: string;
-  name: string;
-  wp: number;
-  area: number;
-  degradation: {
-    firstYear: number;
-    subsequentYears: number;
-  };
+  id: number;
+  manufacturer: string;
+  model_name: string;
+  rated_power_wp: number;
+  degradation_rate_pct: number;
 }
 
 export interface Inverter {
   id?: number; // Backend ID
   name: string;
   kwac: number; // Fixed AC capacity
-  solisSn?: string; 
+  solisSn?: string;
   deviceSn?: string;
   psKey?: string;
   moduleCount?: number;
-  moduleBuildId?: string;
+  moduleBuildId?: number | null;
   capacity_kw?: number; // Backend field name
   serial_number?: string; // Backend field name
 }
@@ -64,16 +61,20 @@ export interface BreakdownEvent {
 }
 
 export interface Project {
-  projectCode: string;
-  projectState: string;
+  id?: number;
+  name: string;
+  location: string;
   projectName: string;
-  projectOwner: string;
+  projectState: string;
+  capacity_kw: number;
+  projectCode?: string; // Optional for legacy compatibility
+  projectOwner?: string;
   dateOfCommissioning: string; // ISO String
   tariff: number; // Project-level fixed tariff
   plantId?: number; // Corresponding Plant ID from SolisCloud API
   inverters: Inverter[];
   monthlyData: Record<string, MonthlyData>; // Keyed by YYYY-MM
-  breakdownEvents?: BreakdownEvent[]; 
+  breakdownEvents?: BreakdownEvent[];
 }
 
 export interface KPIResult {
