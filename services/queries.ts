@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from './apiClient';
-import { Project, Inverter } from '../types';
+import { Project, Inverter, MonthlyKPI } from '../types';
 import { useAuthStore } from '../store/useAuthStore';
 
 interface BackendProject {
@@ -192,7 +192,7 @@ export const useKPIs = (projectCode: string) => {
   const id = extractId(projectCode);
   return useQuery({
     queryKey: ['projects', id, 'kpis'],
-    queryFn: () => apiClient<any>(`/projects/${id}/kpis`),
+    queryFn: () => apiClient<MonthlyKPI[]>(`/projects/${id}/kpis`),
     enabled: !!id,
   });
 };

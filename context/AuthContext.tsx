@@ -14,13 +14,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 import { useMe } from '../services/queries';
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { role, logout: zustandLogout, isLoggedIn } = useAuthStore();
-  const { data: meData, isLoading: isMeLoading } = useMe();
-  const [isLoading, setIsLoading] = useState(false);
-
-  const currentUser: User | null = isLoggedIn ? {
+  const { role, logout: zustandLogout, isLoggedIn, token } = useAuthStore();
+  const { data: meData, isLoading: isMeLoading, isError: isMeError } = useMe();
+  
+  // If the token exists but the 'me' call fails (e.g. 401), we should consider them not logged in
+  // The apiClient already triggers zustandLogout() on 401, so isLoggedIn will become false.
+  
+  const currentUser: User | null = (isLoggedIn && !isMeError) ? {
     username: meData?.full_name || 'Authenticated User',
-    role: (meData?.role?.toLowerCase() || role?.toLowerCase() || 'viewer')
+    role: (meData?.role?.toLowerCase() || role?.toLowerCase() || 'viewer') as any
   } : null;
 
   const login = async (username: string, pass: string): Promise<User | null> => {
@@ -29,10 +31,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = () => {
     zustandLogout();
+    window.location.hash = '#/login';
   };
 
+  const isLoading = isLoggedIn ? isMeLoading : false;
+
   return (
-    <AuthContext.Provider value={{ currentUser, isLoading: isLoading || isMeLoading, login, logout }}>
+    <AuthContext.Provider value={{ currentUser, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

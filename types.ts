@@ -115,6 +115,19 @@ export interface BreakdownStats {
   };
 }
 
+export interface MonthlyKPI {
+  id: number;
+  project_id: number;
+  month: string;
+  total_yield_kwh: number;
+  pr_percentage: number | null;
+  cuf_percentage: number | null;
+  target_p50_kwh: number | null;
+  revenue: number | null;
+  irradiation_kwh_m2: number | null;
+  computed_at: string;
+}
+
 export type SolisRealTimeData = {
   [pointId: string]: {
     value: number | string;

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Project, ChartDataPoint, TimeRange, KPIResult } from '../types';
+import { Project, ChartDataPoint, TimeRange, KPIResult, MonthlyKPI } from '../types';
 import { filterMonthlyData } from '../services/dataService';
 import { useProject, useKPIs, useTriggerSync, useRecalculateKPIs, useModuleBuilds } from '../services/queries';
 import CombinedPerformanceChart from '../components/CombinedPerformanceChart';
@@ -25,9 +25,57 @@ const ProjectDetailsPage: React.FC = () => {
   const [timeRange, setTimeRange] = useState<TimeRange>('12M');
 
   const { data: project } = useProject(projectCode || '');
-  const { data: kpis } = useKPIs(projectCode || '');
+  const { data: kpisArray } = useKPIs(projectCode || '');
   const { data: moduleBuilds = [] } = useModuleBuilds();
   
+  const aggregatedKPIs: KPIResult | null = useMemo(() => {
+    if (!kpisArray || kpisArray.length === 0) return null;
+    
+    const commissioningYearMonth = new Date(project.dateOfCommissioning).toISOString().slice(0, 7);
+    const sorted = [...kpisArray].sort((a, b) => a.month.localeCompare(b.month));
+    
+    // Determine target months based on timeRange
+    let targetMonths = sorted;
+    if (timeRange === '6M') targetMonths = sorted.slice(-6);
+    else if (timeRange === '12M') targetMonths = sorted.slice(-12);
+
+    if (targetMonths.length === 0) return null;
+
+    const totalExport = targetMonths.reduce((sum, m) => sum + m.total_yield_kwh, 0);
+    const totalRevenue = targetMonths.reduce((sum, m) => sum + (m.revenue || 0), 0);
+    const totalTargetP50 = targetMonths.reduce((sum, m) => sum + (m.target_p50_kwh || 0), 0);
+    
+    // For ratios, we average them (simplification for dashboard)
+    const avgPR = targetMonths.filter(m => m.pr_percentage !== null).length > 0
+        ? targetMonths.reduce((sum, m) => sum + (m.pr_percentage || 0), 0) / targetMonths.filter(m => m.pr_percentage !== null).length
+        : 0;
+    const avgCUF = targetMonths.filter(m => m.cuf_percentage !== null).length > 0
+        ? targetMonths.reduce((sum, m) => sum + (m.cuf_percentage || 0), 0) / targetMonths.filter(m => m.cuf_percentage !== null).length
+        : 0;
+
+    const lastMonth = targetMonths[targetMonths.length - 1];
+    
+    return {
+       totalCapacityKWac: project.inverters.reduce((sum, inv) => sum + inv.kwac, 0),
+       totalCapacityKWdc: project.inverters.reduce((sum, inv) => sum + (inv.moduleCount || 0) * 0.540, 0), // Fallback calculation
+       tariff: project.tariff || 4.5,
+       totalExport,
+       totalImport: 0,
+       netEnergy: totalExport,
+       revenue: totalRevenue,
+       targetRevenue: totalTargetP50 * (project.tariff || 4.5), // Placeholder calculation
+       yield: totalExport / (project.inverters.reduce((sum, inv) => sum + (inv.moduleCount || 0) * 0.540, 0) || 1),
+       pr: avgPR,
+       cuf: avgCUF,
+       dcCuf: avgCUF, // Assuming backend cuf_percentage is DC CUF
+       co2Reduction: (totalExport / 1000) * 0.7,
+       targetP50: totalTargetP50,
+       targetOM: totalTargetP50 * 0.95,
+       totalDays: targetMonths.length * 30,
+       averageDailyYield: (totalExport / (project.inverters.reduce((sum, inv) => sum + (inv.moduleCount || 0) * 0.540, 0) || 1)) / (targetMonths.length * 30),
+    };
+  }, [kpisArray, timeRange, project]);
+
   const syncMutation = useTriggerSync(projectCode || '');
   const recalculateMutation = useRecalculateKPIs(projectCode || '');
 
@@ -36,26 +84,29 @@ const ProjectDetailsPage: React.FC = () => {
   const canUpdateData = role === 'admin' || role === 'operations';
   
   const chartData: ChartDataPoint[] = useMemo(() => {
-    if (!project || !project.monthlyData) return [];
+    if (!kpisArray || kpisArray.length === 0) return [];
     
-    const monthlyValues = filterMonthlyData(project.monthlyData, timeRange);
-    
-    return monthlyValues.sort((a, b) => a.month.localeCompare(b.month)).map(m => {
-       const exportVal = (m.inverterExportKWh || []).reduce((s, v) => s + v, 0);
-       return {
-         month: m.month,
-         actualEnergy: exportVal - (m.electricityImportedKWh || 0),
-         targetEnergyP50: m.targetNetKWhP50 || 0,
-         targetEnergyOM: (m.inverterTargetOMKWh || []).reduce((s, v) => s + v, 0),
-         revenue: (exportVal - (m.electricityImportedKWh || 0)) * (project.tariff || 4.5),
-         targetRevenueP50: (m.targetNetKWhP50 || 0) * (project.tariff || 4.5),
-         targetRevenueOM: (m.inverterTargetOMKWh || []).reduce((s, v) => s + v, 0) * (project.tariff || 4.5),
-       };
-    });
-  }, [project, timeRange]);
+    const sorted = [...kpisArray].sort((a, b) => a.month.localeCompare(b.month));
+    let targetMonths = sorted;
+    if (timeRange === '6M') targetMonths = sorted.slice(-6);
+    else if (timeRange === '12M') targetMonths = sorted.slice(-12);
+
+    return targetMonths.map(m => ({
+          month: m.month,
+          actualEnergy: m.total_yield_kwh,
+          targetEnergyP50: m.target_p50_kwh || 0,
+          targetEnergyOM: (m.target_p50_kwh || 0) * 0.95,
+          revenue: m.revenue || (m.total_yield_kwh * (project?.tariff || 4.5)),
+          targetRevenueP50: (m.target_p50_kwh || 0) * (project?.tariff || 4.5),
+          targetRevenueOM: (m.target_p50_kwh || 0) * 0.95 * (project?.tariff || 4.5),
+          pr: m.pr_percentage || 0,
+          dcCuf: m.cuf_percentage || 0,
+    }));
+  }, [kpisArray, timeRange, project]);
 
   if (!project) return <div className="p-10 text-center text-white">Loading Project...</div>;
 
+  const kpis = aggregatedKPIs;
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex justify-between items-start">

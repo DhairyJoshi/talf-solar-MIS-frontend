@@ -18,7 +18,10 @@ export const apiClient = async <T>(endpoint: string, options: RequestInit = {}):
   });
 
   if (!response.ok) {
-    // If unauthorized, you could potentially clear the store here: useAuthStore.getState().logout()
+    if (response.status === 401) {
+      useAuthStore.getState().logout();
+      window.location.hash = '#/login'; // Force direct navigation to hash login
+    }
     throw new Error(`API Request Failed: ${response.status} ${response.statusText}`);
   }
 
