@@ -193,19 +193,19 @@ export const calculateInverterKPIs = (project: Project, inverter: Inverter, inve
 export const calculateBreakdownStats = (events: BreakdownEvent[], inverterDcCapacity: number, periodDays: number): BreakdownStats => {
   const stats: BreakdownStats = { totalBreakdownDurationMinutes: 0, totalGenerationLossKwh: 0, totalGiiLoss: 0, availabilityPercent: 100, byReason: {} };
   events.forEach(event => {
-    const [startH, startM] = event.startTime.split(':').map(Number);
-    const [endH, endM] = event.endTime.split(':').map(Number);
-    const durationMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+    const start = new Date(event.start_date);
+    const end = new Date(event.end_date);
+    const durationMinutes = (end.getTime() - start.getTime()) / (1000 * 60);
+
     if (durationMinutes < 0) return;
-    const giiLoss = event.giiAtEnd - event.giiAtStart;
-    const generationLossKwh = giiLoss * inverterDcCapacity * SYSTEM_EFFICIENCY;
+    const generationLossKwh = event.loss_kwh || 0;
     stats.totalBreakdownDurationMinutes += durationMinutes;
-    stats.totalGiiLoss += giiLoss;
     stats.totalGenerationLossKwh += generationLossKwh;
-    if (!stats.byReason[event.reason]) stats.byReason[event.reason] = { durationMinutes: 0, giiLoss: 0, generationLossKwh: 0, count: 0 };
-    const reasonStats = stats.byReason[event.reason]!;
+
+    const reason = event.description || 'Other';
+    if (!stats.byReason[reason]) stats.byReason[reason] = { durationMinutes: 0, giiLoss: 0, generationLossKwh: 0, count: 0 };
+    const reasonStats = stats.byReason[reason]!;
     reasonStats.durationMinutes += durationMinutes;
-    reasonStats.giiLoss += giiLoss;
     reasonStats.generationLossKwh += generationLossKwh;
     reasonStats.count += 1;
   });

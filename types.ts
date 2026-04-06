@@ -15,16 +15,19 @@ export interface ModuleBuild {
 }
 
 export interface Inverter {
-  id?: number; // Backend ID
-  name: string;
-  kwac: number; // Fixed AC capacity
+  id: number;
+  serial_number: string;
+  vendor_type?: string;
+  project_id?: number;
+  module_build_id?: number | null;
+  name?: string; // Mapped from serial_number in project view
+  kwac?: number; // Mapped from capacity_kw in project view
   solisSn?: string;
   deviceSn?: string;
   psKey?: string;
   moduleCount?: number;
-  moduleBuildId?: number | null;
   capacity_kw?: number; // Backend field name
-  serial_number?: string; // Backend field name
+  live_data?: any;
 }
 
 export interface MonthlyData {
@@ -49,15 +52,14 @@ export enum BreakdownReason {
 }
 
 export interface BreakdownEvent {
-  id: string | number; // Support both local UUIDs and backend integer IDs
-  inverterName: string; // Link to the specific inverter
-  date: string; // YYYY-MM-DD
-  startTime: string; // HH:MM
-  endTime: string; // HH:MM
-  reason: BreakdownReason;
-  notes?: string;
-  giiAtStart: number; // GII (Global Horizontal Irradiance) in kWh/m^2
-  giiAtEnd: number; // GII in kWh/m^2
+  id?: number | string;
+  inverter_id?: number;
+  inverterName?: string; // Legacy/UI display
+  start_date: string; // ISO DateTime
+  end_date: string; // ISO DateTime
+  description: string;
+  loss_kwh: number;
+  created_at?: string;
 }
 
 export interface Project {
@@ -107,7 +109,7 @@ export interface BreakdownStats {
   totalGiiLoss: number;
   availabilityPercent: number;
   byReason: {
-    [key in BreakdownReason]?: {
+    [key: string]: {
       durationMinutes: number;
       giiLoss: number;
       generationLossKwh: number;

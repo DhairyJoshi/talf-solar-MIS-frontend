@@ -284,6 +284,14 @@ export const useAddBreakdownEvent = (inverterId: number) => {
   });
 };
 
+export const useUpdateBreakdownEvent = (inverterId: number) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (event: any) => apiClient(`/inverters/breakdown-events/${event.id}`, { method: 'PUT', body: JSON.stringify(event) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inverters', inverterId, 'events'] }),
+  });
+};
+
 export const useDeleteBreakdownEvent = (inverterId: number) => {
   const queryClient = useQueryClient();
   return useMutation({

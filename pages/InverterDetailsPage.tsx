@@ -1,13 +1,13 @@
 
 import React, { useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { TimeRange, BreakdownEvent } from '../types';
+import { TimeRange, BreakdownEvent, Inverter } from '../types';
 import { filterMonthlyData } from '../services/dataService';
 import { useAuth } from '../context/AuthContext';
 import InverterBreakdownAnalysis from '../components/InverterBreakdownAnalysis';
 import BreakdownEntryModal from '../components/BreakdownEntryModal';
 import InverterLiveData from '../components/InverterLiveData';
-import { useInverter, useProject, useBreakdownEvents, useAddBreakdownEvent, useDeleteBreakdownEvent } from '../services/queries';
+import { useInverter, useProject, useBreakdownEvents, useAddBreakdownEvent, useUpdateBreakdownEvent, useDeleteBreakdownEvent } from '../services/queries';
 
 const formatIndian = (val: number | undefined) => {
   if (val === undefined || val === null || isNaN(val)) return '-';
@@ -38,7 +38,19 @@ const InverterDetailsPage: React.FC = () => {
   const { data: inverter } = useInverter(inverterId);
   const { data: events = [] } = useBreakdownEvents(inverterId);
   const addEventMutation = useAddBreakdownEvent(inverterId);
+  const updateEventMutation = useUpdateBreakdownEvent(inverterId);
   const deleteEventMutation = useDeleteBreakdownEvent(inverterId);
+
+  // Merge standalone inverter response with metadata from project level
+  const mergedInverter = useMemo<Inverter | null>(() => {
+    if (!inverter) return null;
+    const projectInverter = project?.inverters?.find(inv => inv.id === inverterId);
+    return {
+      ...projectInverter,
+      ...inverter, // Standalone response fields (serial_number, vendor_type, id)
+      kwac: inverter.kwac || projectInverter?.kwac || 50, // Prioritize standalone kwac, fallback to project inv kwac, then 50
+    };
+  }, [project, inverter, inverterId]);
 
   const chartData = useMemo(() => {
     if (!project || !project.monthlyData) return [];
@@ -68,10 +80,14 @@ const InverterDetailsPage: React.FC = () => {
     );
   }
 
-  if (!project || !inverter) return <div className="p-10 text-center text-white">Loading Inverter Details...</div>;
+  if (!project || !mergedInverter) return <div className="p-10 text-center text-white">Loading Inverter Details...</div>;
 
   const handleSaveBreakdown = (event: any) => {
-    addEventMutation.mutate(event, { onSuccess: () => setBreakdownModalOpen(false) });
+    if (event.id && typeof event.id === 'number') {
+      updateEventMutation.mutate(event, { onSuccess: () => setBreakdownModalOpen(false) });
+    } else {
+      addEventMutation.mutate(event, { onSuccess: () => setBreakdownModalOpen(false) });
+    }
   };
 
   const handleDeleteBreakdown = (eventId: string | number) => {
@@ -84,10 +100,10 @@ const InverterDetailsPage: React.FC = () => {
         <nav className="text-sm text-gray-400 mb-2">
           <Link to="/" className="hover:text-white">Dashboard</Link> &gt;
           <Link to={`/project/${project.projectCode}`} className="hover:text-white"> {project.projectName}</Link> &gt;
-          <span className="text-white"> {inverter.serial_number}</span>
+          <span className="text-white"> {mergedInverter.serial_number}</span>
         </nav>
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-white">Inverter: {inverter.serial_number}</h1>
+          <h1 className="text-3xl font-bold text-white">Inverter: {mergedInverter.serial_number}</h1>
           {canEditBreakdowns && activeTab === 'breakdown' && (
             <button onClick={() => { setEditingEvent(null); setBreakdownModalOpen(true); }} className="bg-solar-danger text-white font-bold px-4 py-2 rounded shadow hover:bg-red-500 transition">+ Log Breakdown</button>
           )}
@@ -110,9 +126,9 @@ const InverterDetailsPage: React.FC = () => {
 
       {activeTab === 'breakdown' && (
         <InverterBreakdownAnalysis
-          inverter={inverter}
+          inverter={mergedInverter}
           project={project}
-          inverterDcCapacity={inverter.capacity_kw || 50}
+          inverterDcCapacity={mergedInverter.kwac || 50}
           onEditEvent={(ev: any) => { setEditingEvent(ev); setBreakdownModalOpen(true); }}
           onDeleteEvent={handleDeleteBreakdown}
           monthFilter={breakdownMonthFilter}
@@ -122,7 +138,10 @@ const InverterDetailsPage: React.FC = () => {
       )}
 
       {activeTab === 'live' && (
-        <InverterLiveData inverter={{ name: inverter.serial_number, deviceSn: inverter.serial_number, kwac: inverter.capacity_kw }} dateOfCommissioning={project.dateOfCommissioning} />
+        <InverterLiveData 
+            inverter={mergedInverter} 
+            dateOfCommissioning={project.dateOfCommissioning} 
+        />
       )}
 
       {isBreakdownModalOpen && (
@@ -130,10 +149,11 @@ const InverterDetailsPage: React.FC = () => {
           isOpen={isBreakdownModalOpen}
           onClose={() => setBreakdownModalOpen(false)}
           onSave={handleSaveBreakdown}
-          inverterName={inverter.serial_number}
+          inverterName={mergedInverter.serial_number}
           initialEvent={editingEvent}
         />
       )}
+
 
       <style>{`
         .kpi-card { background-color: #1B263B; padding: 1rem; border-radius: 0.5rem; border: 1px solid #415A77; } .kpi-label { color: #A0AEC0; font-size: 0.75rem; text-transform: uppercase; } .kpi-value { font-size: 1.25rem; font-weight: bold; color: white; }

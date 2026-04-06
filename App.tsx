@@ -45,21 +45,8 @@ const App: React.FC = () => {
         const newProject: any = await createProjectMutation.mutateAsync({
           name: projectToSave.projectName,
           location: projectToSave.projectState,
-          capacity_kw: projectToSave.inverters.reduce((sum, inv) => sum + inv.kwac, 0)
+          capacity_kw: projectToSave.capacity_kw
         });
-
-        const projectId = newProject.id;
-        for (const inv of projectToSave.inverters) {
-          await apiClient(`/projects/${projectId}/inverters`, {
-            method: 'POST',
-            body: JSON.stringify({
-              serial_number: inv.deviceSn || inv.solisSn || inv.name,
-              vendor_type: 'soliscloud',
-              api_key: 'PLATFORM_KEY',
-              api_secret: 'PLATFORM_SECRET'
-            })
-          });
-        }
 
         queryClient.invalidateQueries({ queryKey: ['projects'] });
         handleCloseProjectModal();

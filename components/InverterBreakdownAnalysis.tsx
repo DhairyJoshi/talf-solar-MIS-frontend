@@ -30,26 +30,25 @@ const SortIcon = ({ direction }: { direction: 'asc' | 'desc' | null }) => {
 
 const InverterBreakdownAnalysis: React.FC<Props> = ({ project, inverter, inverterDcCapacity, onEditEvent, onDeleteEvent, monthFilter, onMonthFilterChange, externalEvents }) => {
   const { currentUser } = useAuth();
-  const [sortConfig, setSortConfig] = useState<{ key: keyof BreakdownEvent, dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' });
+  const [sortConfig, setSortConfig] = useState<{ key: keyof BreakdownEvent, dir: 'asc' | 'desc' }>({ key: 'start_date', dir: 'desc' });
 
   const canEdit = currentUser?.role === 'admin' || currentUser?.role === 'operations';
-
   const { filteredEvents, stats, daysInMonth } = useMemo(() => {
     const dataSource = externalEvents || project.breakdownEvents || [];
     const events = dataSource
-      .filter(e => e.inverterName === inverter.name && e.date.startsWith(monthFilter));
-    
+      .filter(e => e.start_date.startsWith(monthFilter));
+
     const [year, month] = monthFilter.split('-').map(Number);
     const d = new Date(year, month, 0).getDate();
 
     const calculatedStats = calculateBreakdownStats(events, inverterDcCapacity, d);
     return { filteredEvents: events, stats: calculatedStats, daysInMonth: d };
-  }, [project.breakdownEvents, inverter.name, monthFilter, inverterDcCapacity, externalEvents]);
+  }, [project.breakdownEvents, monthFilter, inverterDcCapacity, externalEvents]);
 
   const sortedEvents = useMemo(() => {
     return [...filteredEvents].sort((a, b) => {
-      const valA = a[sortConfig.key];
-      const valB = b[sortConfig.key];
+      const valA = a[sortConfig.key] || '';
+      const valB = b[sortConfig.key] || '';
       let comparison = 0;
       if (valA > valB) comparison = 1;
       else if (valA < valB) comparison = -1;
@@ -61,25 +60,26 @@ const InverterBreakdownAnalysis: React.FC<Props> = ({ project, inverter, inverte
     setSortConfig(prev => ({ key, dir: prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc' }));
   };
 
-  const getDuration = (start: string, end: string) => {
-      const [sh, sm] = start.split(':').map(Number);
-      const [eh, em] = end.split(':').map(Number);
-      return (eh*60+em) - (sh*60+sm);
+  const getDurationMinutes = (start: string, end: string) => {
+    return (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60);
   }
-  
+
+  const formatShortDate = (iso: string) => new Date(iso).toLocaleDateString([], { day: '2-digit', month: 'short' });
+  const formatTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
   return (
     <div className="space-y-6">
       <div className="bg-solar-card p-4 rounded-lg border border-solar-border">
         <label htmlFor="month-filter" className="text-sm text-gray-400 mr-2">Select Month:</label>
-        <input 
-            type="month" 
-            id="month-filter"
-            value={monthFilter}
-            onChange={(e) => onMonthFilterChange(e.target.value)}
-            className="bg-solar-bg border border-solar-border rounded p-2 text-white"
+        <input
+          type="month"
+          id="month-filter"
+          value={monthFilter}
+          onChange={(e) => onMonthFilterChange(e.target.value)}
+          className="bg-solar-bg border border-solar-border rounded p-2 text-white"
         />
       </div>
-      
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="kpi-card"><p className="kpi-label">Total Downtime</p><p className="kpi-value text-solar-danger">{formatMinutes(stats.totalBreakdownDurationMinutes)}</p></div>
         <div className="kpi-card"><p className="kpi-label">Generation Loss</p><p className="kpi-value text-orange-400">{stats.totalGenerationLossKwh.toFixed(1)} <span className="text-sm font-normal">kWh</span></p></div>
@@ -89,64 +89,64 @@ const InverterBreakdownAnalysis: React.FC<Props> = ({ project, inverter, inverte
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-solar-card rounded-lg border border-solar-border">
-            <h3 className="p-4 font-bold text-white border-b border-solar-border">Breakdown by Cause</h3>
-            <div className="p-4 space-y-2">
-            {/* FIX: Cast `data` to the correct type to avoid property access errors on 'unknown'. */}
+          <h3 className="p-4 font-bold text-white border-b border-solar-border">Breakdown by Description</h3>
+          <div className="p-4 space-y-2">
             {Object.entries(stats.byReason).map(([reason, data]) => {
-                const reasonData = data as { count: number; durationMinutes: number; };
-                return (
-                    <div key={reason}>
-                        <div className="flex justify-between text-sm mb-1">
-                            <span className="font-semibold text-gray-300">{reason} ({reasonData.count})</span>
-                            <span className="text-gray-400">{formatMinutes(reasonData.durationMinutes)}</span>
-                        </div>
-                        <div className="w-full bg-solar-bg rounded-full h-2.5">
-                            <div className="bg-solar-danger h-2.5 rounded-full" style={{ width: `${(reasonData.durationMinutes / (stats.totalBreakdownDurationMinutes || 1)) * 100}%` }}></div>
-                        </div>
-                    </div>
-                );
+              const reasonData = data as { count: number; durationMinutes: number; };
+              return (
+                <div key={reason}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="font-semibold text-gray-300 truncate max-w-[200px]">{reason} ({reasonData.count})</span>
+                    <span className="text-gray-400">{formatMinutes(reasonData.durationMinutes)}</span>
+                  </div>
+                  <div className="w-full bg-solar-bg rounded-full h-2.5">
+                    <div className="bg-solar-danger h-2.5 rounded-full" style={{ width: `${(reasonData.durationMinutes / (stats.totalBreakdownDurationMinutes || 1)) * 100}%` }}></div>
+                  </div>
+                </div>
+              );
             })}
             {Object.keys(stats.byReason).length === 0 && <p className="text-sm text-gray-500 text-center py-4">No breakdown events recorded for this month.</p>}
-            </div>
+          </div>
         </div>
-         <div className="bg-solar-card rounded-lg border border-solar-border">
-            <h3 className="p-4 font-bold text-white border-b border-solar-border">Impact by Cause</h3>
+        <div className="bg-solar-card rounded-lg border border-solar-border">
+          <h3 className="p-4 font-bold text-white border-b border-solar-border">Impact by Description</h3>
+          <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-                <thead className="text-xs text-gray-400 uppercase"><tr><th className="px-4 py-2">Reason</th><th className="px-4 py-2 text-right">Gen Loss (kWh)</th><th className="px-4 py-2 text-right">GII Loss</th></tr></thead>
-                <tbody className="divide-y divide-solar-border">
-                {/* FIX: Cast `data` to the correct type to avoid property access errors on 'unknown'. */}
+              <thead className="text-xs text-gray-400 uppercase"><tr><th className="px-4 py-2">Description</th><th className="px-4 py-2 text-right">Gen Loss (kWh)</th></tr></thead>
+              <tbody className="divide-y divide-solar-border">
                 {Object.entries(stats.byReason).map(([reason, data]) => {
-                    const reasonData = data as { generationLossKwh: number; giiLoss: number; };
-                    return (
-                        <tr key={reason}><td className="p-3 font-medium text-gray-300">{reason}</td><td className="p-3 text-right text-orange-400">{reasonData.generationLossKwh.toFixed(1)}</td><td className="p-3 text-right text-yellow-400">{reasonData.giiLoss.toFixed(2)}</td></tr>
-                    );
+                  const reasonData = data as { generationLossKwh: number; };
+                  return (
+                    <tr key={reason}><td className="p-3 font-medium text-gray-300 truncate max-w-[150px]">{reason}</td><td className="p-3 text-right text-orange-400">{reasonData.generationLossKwh.toFixed(1)}</td></tr>
+                  );
                 })}
-                </tbody>
+              </tbody>
             </table>
+          </div>
         </div>
       </div>
 
       <div className="bg-solar-card rounded-lg border border-solar-border">
         <h3 className="p-4 font-bold text-white border-b border-solar-border">Event Log</h3>
-        <div className="overflow-y-auto max-h-[400px]">
+        <div className="overflow-x-auto">
           <table className="w-full text-left text-sm"><thead className="table-header"><tr>
-            <th className="table-cell cursor-pointer" onClick={() => handleSort('date')}>Date <SortIcon direction={sortConfig.key === 'date' ? sortConfig.dir : null} /></th>
-            <th className="table-cell">Time</th>
+            <th className="table-cell cursor-pointer" onClick={() => handleSort('start_date')}>Start <SortIcon direction={sortConfig.key === 'start_date' ? sortConfig.dir : null} /></th>
+            <th className="table-cell">End</th>
             <th className="table-cell">Duration</th>
-            <th className="table-cell cursor-pointer" onClick={() => handleSort('reason')}>Reason <SortIcon direction={sortConfig.key === 'reason' ? sortConfig.dir : null} /></th>
+            <th className="table-cell">Description</th>
             <th className="table-cell text-right">Gen Loss (kWh)</th>
             {canEdit && <th className="table-cell text-center">Actions</th>}
           </tr></thead>
             <tbody className="divide-y divide-solar-border">
               {sortedEvents.map((event) => (
                 <tr key={event.id} className="hover:bg-solar-bg">
-                  <td className="p-3 font-mono">{event.date}</td>
-                  <td className="p-3 font-mono">{event.startTime} - {event.endTime}</td>
-                  <td className="p-3">{formatMinutes(getDuration(event.startTime, event.endTime))}</td>
-                  <td className="p-3">{event.reason}</td>
-                  <td className="p-3 text-right text-orange-400">{((event.giiAtEnd - event.giiAtStart) * inverterDcCapacity * 0.85).toFixed(2)}</td>
-                  {canEdit && <td className="p-3 text-center">
-                    <button onClick={() => onEditEvent(event)} className="text-xs text-blue-400 hover:text-blue-300">Edit</button> | <button onClick={() => onDeleteEvent(event.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                  <td className="p-3 font-mono whitespace-nowrap">{formatShortDate(event.start_date)} {formatTime(event.start_date)}</td>
+                  <td className="p-3 font-mono whitespace-nowrap">{formatShortDate(event.end_date)} {formatTime(event.end_date)}</td>
+                  <td className="p-3">{formatMinutes(getDurationMinutes(event.start_date, event.end_date))}</td>
+                  <td className="p-3 italic text-gray-400 truncate max-w-[200px]">{event.description}</td>
+                  <td className="p-3 text-right text-orange-400 font-mono">{event.loss_kwh?.toFixed(1)}</td>
+                  {canEdit && <td className="p-3 text-center whitespace-nowrap">
+                    <button onClick={() => onEditEvent(event)} className="text-xs text-blue-400 hover:text-blue-300">Edit</button> | <button onClick={() => onDeleteEvent(event.id!)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
                   </td>}
                 </tr>
               ))}

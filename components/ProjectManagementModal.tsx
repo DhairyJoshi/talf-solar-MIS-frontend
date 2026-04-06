@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Project, Inverter, ModuleBuild } from '../types';
+import { Project } from '../types';
 import { useModuleBuilds } from '../services/queries';
 
 interface Props {
@@ -49,26 +49,7 @@ const ProjectManagementModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
     }
   }, [isOpen, initialProject]);
 
-  const handleAddInverter = () => {
-    setProject(prev => ({
-      ...prev,
-      inverters: [...prev.inverters, { name: `${project.name} Inv ${prev.inverters.length + 1}`, kwac: 0 }]
-    }));
-  };
 
-  const handleRemoveInverter = (invIndex: number) => {
-    const newInverters = [...project.inverters];
-    newInverters.splice(invIndex, 1);
-    setProject(prev => ({ ...prev, inverters: newInverters }));
-  };
-
-  const handleInverterChange = (invIndex: number, field: keyof Inverter, value: string | number) => {
-    const newInverters = [...project.inverters];
-    (newInverters[invIndex] as any)[field] = value;
-    setProject(prev => ({ ...prev, inverters: newInverters }));
-  };
-
-  const totalKWac = project.inverters.reduce((sum, inv) => sum + (inv.kwac || 0), 0);
 
   if (!isOpen) return null;
 
@@ -133,57 +114,10 @@ const ProjectManagementModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
             )}
           </div>
 
-          <div className="bg-solar-card p-4 rounded border border-solar-border mb-6 flex justify-around">
-            <div className="text-center">
-              <p className="text-gray-400 text-xs uppercase">Total Current AC Capacity</p>
-              <p className="text-xl font-bold text-solar-success">{totalKWac.toLocaleString()} <span className="text-sm font-normal">kWac</span></p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-white">Inverters & Modules</h3>
-              <button onClick={handleAddInverter} className="px-4 py-1.5 text-sm bg-solar-accent text-solar-bg font-bold rounded hover:bg-yellow-400 transition shadow-lg shadow-yellow-400/20 underline-none">
-                + Add Inverter
-              </button>
-            </div>
-            {project.inverters.map((inv, iIdx) => (
-              <div key={iIdx} className="bg-solar-card border border-solar-border rounded-lg p-5 grid grid-cols-1 md:grid-cols-5 gap-4 items-end animate-fadeIn">
-                <div className="md:col-span-1">
-                  <label className="label-sm">Inverter Name</label>
-                  <input type="text" className="input-field-sm" value={inv.name} onChange={(e) => handleInverterChange(iIdx, 'name', e.target.value)} />
-                </div>
-                <div className="md:col-span-1">
-                  <label className="label-sm">Solis SN (for API)</label>
-                  <input type="text" className="input-field-sm" value={inv.solisSn || ''} onChange={(e) => handleInverterChange(iIdx, 'solisSn', e.target.value)} />
-                </div>
-                <div className="md:col-span-1">
-                  <label className="label-sm">Module Build</label>
-                  <select value={inv.moduleBuildId || ''} onChange={(e) => handleInverterChange(iIdx, 'moduleBuildId', parseInt(e.target.value))} className="input-field-sm w-full">
-                    <option value="">Select Build...</option>
-                    {moduleBuilds.map(b => (
-                      <option key={b.id} value={b.id}>
-                        {b.manufacturer} {b.model_name}
-                      </option>
-                    ))}
-                  </select>
-                  {moduleBuilds.length === 0 && (
-                    <p className="text-[10px] text-red-400 mt-1 leading-tight">No builds found. Add specs in 'Manage Modules' first.</p>
-                  )}
-                </div>
-                <div className="md:col-span-1">
-                  <label className="label-sm">Module Count</label>
-                  <input type="number" className="input-field-sm" value={inv.moduleCount || ''} onChange={(e) => handleInverterChange(iIdx, 'moduleCount', parseInt(e.target.value, 10))} />
-                </div>
-                <div className="flex items-end gap-4">
-                  <div className="flex-1">
-                    <label className="label-sm">Fixed KWac</label>
-                    <input type="number" className="input-field-sm" value={inv.kwac} onChange={(e) => handleInverterChange(iIdx, 'kwac', parseFloat(e.target.value))} />
-                  </div>
-                  <button onClick={() => handleRemoveInverter(iIdx)} className="text-red-500 hover:text-red-400 text-2xl pb-1" title="Remove inverter">&times;</button>
-                </div>
-              </div>
-            ))}
+          <div className="mt-4 p-4 bg-solar-accent/5 border border-solar-accent/20 rounded text-center">
+            <p className="text-sm text-gray-400">
+              <span className="text-solar-accent font-bold">Note:</span> Inverters and Module specifications can be added and managed from the <span className="italic">Project Details</span> page after the project is created.
+            </p>
           </div>
         </div>
 
@@ -196,10 +130,8 @@ const ProjectManagementModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
       </div>
       <style>{`
         .label { display: block; font-size: 0.875rem; color: #a0aec0; margin-bottom: 0.25rem; }
-        .label-sm { display: block; font-size: 0.75rem; color: #718096; margin-bottom: 0.25rem; }
         .input-field { width: 100%; background-color: #1B263B; border: 1px solid #415A77; border-radius: 4px; padding: 8px; color: white; outline: none; }
-        .input-field-sm { width: 100%; background-color: #0D1B2A; border: 1px solid #415A77; border-radius: 4px; padding: 4px 8px; font-size: 0.875rem; color: white; outline: none; }
-        .input-field:focus, .input-field-sm:focus { border-color: #FFD700; }
+        .input-field:focus { border-color: #FFD700; }
       `}</style>
     </div>
   );

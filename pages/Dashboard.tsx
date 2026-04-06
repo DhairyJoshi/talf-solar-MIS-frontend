@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { Project, KPIResult, MonthlyData, TimeRange } from '../types';
+import { Project, MonthlyData, TimeRange } from '../types';
 import { calculateKPIs } from '../services/dataService';
 import CombinedPerformanceChart from '../components/CombinedPerformanceChart';
 import { Link } from 'react-router-dom';
@@ -8,11 +8,6 @@ import { useAuth } from '../context/AuthContext';
 import { useProjects, useModuleBuilds, useCreateProject, useUpdateProject, useDeleteProject } from '../services/queries';
 import ProjectManagementModal from '../components/ProjectManagementModal';
 import ModuleBuildsModal from '../components/ModuleBuildsModal';
-
-const SortIcon = ({ direction }: { direction: 'asc' | 'desc' | null }) => {
-  if (!direction) return <span className="text-gray-600 ml-1 opacity-0 group-hover:opacity-50">⇅</span>;
-  return <span className="text-solar-accent ml-1">{direction === 'asc' ? '▲' : '▼'}</span>;
-};
 
 const formatIndian = (n: number, type: 'curr' | 'unit' = 'unit') => {
   const prefix = type === 'curr' ? '₹' : '';
